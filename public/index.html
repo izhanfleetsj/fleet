@@ -2068,9 +2068,57 @@ async function loadTickets(){
   }
 }
 const HIRING_STORAGE_KEY = "fleetHiringRecords_v1";
+/* Job requests are edited from several devices at once (requesters log / cancel jobs while
+   admin assigns). Saving the whole list from a stale copy used to wipe other people's changes,
+   e.g. a requester's "Cancel Job" being undone when admin saved an assignment. Now every job has
+   a uid, and a save first re-reads the server copy and merges per job:
+   - jobs changed (or added) on this device since it last loaded → this device's version
+   - jobs not touched here → the server's version (keeps changes made elsewhere)
+   - jobs deleted here → removed; jobs added elsewhere → kept. */
+let hiringBase = new Map();   // uid → JSON of each job as last loaded / saved
+function hireUid(h){
+  if(!h.uid){
+    const k = JSON.stringify([h.unit,h.company,h.tarikh,h.masa,h.sv,h.phone,h.tempat,h.project]);
+    let x = 5381; for(let i=0;i<k.length;i++) x = ((x<<5) + x + k.charCodeAt(i)) >>> 0;   // same id on every device for older jobs
+    h.uid = "h" + x.toString(36) + k.length.toString(36);
+  }
+  return h.uid;
+}
+function prepHireList(list){
+  const seen = new Set();
+  list.forEach(h=>{ normalizeHireRecord(h); upgradeHireRecord(h); let u = hireUid(h); while(seen.has(u)){ h.uid = u + "x"; u = h.uid; } seen.add(u); });
+  return list;
+}
+async function fetchHireServerList(){
+  const result = await window.storage.get(HIRING_STORAGE_KEY, true);
+  if(!result) return [];
+  const saved = JSON.parse(result.value);
+  return saved && Array.isArray(saved.data) ? prepHireList(saved.data) : [];
+}
 async function persistHiringRecords(){
   try{
+    hiringRecords.forEach(h=>{ if(!h.uid) h.uid = "h" + Date.now().toString(36) + Math.random().toString(36).slice(2,7); });
+    let merged = hiringRecords.slice();
+    try{
+      const server = await fetchHireServerList();
+      const local = new Map(hiringRecords.map(h=>[h.uid, h]));
+      const changedHere = h => !hiringBase.has(h.uid) || hiringBase.get(h.uid)!==JSON.stringify(h);
+      const out = [], used = new Set();
+      // brand-new jobs from this device go on top (newest first, as before)
+      hiringRecords.forEach(h=>{ if(!hiringBase.has(h.uid) && !server.some(x=>x.uid===h.uid)){ out.push(h); used.add(h.uid); } });
+      server.forEach(sh=>{
+        if(used.has(sh.uid)) return;
+        const lh = local.get(sh.uid);
+        if(lh){ out.push(changedHere(lh) ? lh : sh); used.add(sh.uid); }
+        else if(!hiringBase.has(sh.uid)){ out.push(sh); used.add(sh.uid); }   // added elsewhere
+        // else: deleted on this device → drop
+      });
+      hiringRecords.forEach(h=>{ if(!used.has(h.uid) && changedHere(h)){ out.push(h); used.add(h.uid); } });   // edited here, deleted elsewhere → keep the edit
+      merged = out;
+    }catch(e){ console.warn("Could not re-read job requests before saving; saving this copy.", e); }
+    hiringRecords.length = 0; merged.forEach(h=>hiringRecords.push(h));
     await window.storage.set(HIRING_STORAGE_KEY, JSON.stringify({data:hiringRecords}), true);
+    hiringBase = new Map(hiringRecords.map(h=>[h.uid, JSON.stringify(h)]));
     setSyncStatus("✓ Job request tersimpan " + nowTimeStr());
   }catch(e){
     console.warn("Tak dapat simpan hiring records ke shared storage:", e);
@@ -2079,19 +2127,25 @@ async function persistHiringRecords(){
 }
 async function loadHiringRecords(){
   try{
-    const result = await window.storage.get(HIRING_STORAGE_KEY, true);
-    if(!result) return;
-    const saved = JSON.parse(result.value);
-    if(saved && Array.isArray(saved.data) && saved.data.length){
+    const list = await fetchHireServerList();
+    if(list.length){
       hiringRecords.length = 0;
-      let upgraded = false;
-      saved.data.forEach(h=>{ normalizeHireRecord(h); if(upgradeHireRecord(h)) upgraded = true; hiringRecords.push(h); });   // older records: mixed case / free text
-      if(upgraded && currentRole==="admin") persistHiringRecords();   // save the tidy-up once
+      list.forEach(h=>hiringRecords.push(h));
+      hiringBase = new Map(hiringRecords.map(h=>[h.uid, JSON.stringify(h)]));
     }
   }catch(e){
     console.info("Hiring records: tiada simpanan shared lagi, guna data asal.", e);
   }
 }
+/* Keep job lists fresh: re-read every minute (and when the page is opened), unless admin
+   is in the middle of assigning a job. */
+async function refreshHiringRecords(){
+  const ap = document.getElementById("assignPanel");
+  if(ap && ap.style.display!=="none") return;
+  await loadHiringRecords();
+  renderHiring();
+}
+setInterval(()=>{ if(document.visibilityState==="visible") refreshHiringRecords(); }, 60000);
 
 const hiringRecords = [
 ];
@@ -3165,6 +3219,7 @@ document.querySelectorAll(".nav-btn").forEach(btn=>{
     if(v==="settings") renderSettings();
     if(v==="insurance") renderInsurance();
     if(v==="dispose") importPurchaseInbox().then(renderDispose);
+    if(v==="hiring" || v==="requester") refreshHiringRecords();
     document.body.classList.remove("nav-open");
   });
 });
