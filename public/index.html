@@ -714,6 +714,25 @@ body:not(.is-admin) .admin-only{display:none !important;}
       <section class="view" id="view-requester">
         <div class="section-plate"><span class="rivet"></span><h2>Requester — Own / Hire Vehicle</h2><span class="sub">Request a vehicle / machine for a job — for supervisors &amp; requesters</span></div>
 
+        <div class="panel" id="reqStatusPanel">
+          <div class="panel-head">
+            <h3>My Job Requests — Status</h3>
+            <span class="sub" style="font-size:11px;color:var(--ink-soft);margin-left:auto;">View only — see whether your job has been assigned</span>
+          </div>
+          <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px;">
+            <select id="rs_branch" onchange="renderReqStatus()" style="max-width:200px;"></select>
+            <input id="rs_search" placeholder="Search supervisor / project / location" oninput="renderReqStatus()" style="flex:1;min-width:200px;">
+          </div>
+          <div class="fit-table" style="max-height:360px;overflow:auto;border:1px solid var(--line);border-radius:var(--radius);">
+          <table>
+            <thead style="position:sticky;top:0;background:var(--panel);z-index:1;"><tr><th>Item</th><th>Company / Project</th><th>Branch</th><th>Date / Time</th><th>Location</th><th>Supervisor (site)</th><th>Status / Assigned Vehicle</th><th></th></tr></thead>
+            <tbody id="rsBody"></tbody>
+          </table>
+          </div>
+          <div id="rsCount" style="font-size:11px;color:var(--ink-soft);margin-top:6px;"></div>
+          <div id="rsCancelPanel" style="display:none;background:var(--note-bg);border:1px solid var(--yellow-deep);border-radius:var(--radius);padding:12px;margin-top:10px;"></div>
+        </div>
+
         <div class="panel" id="hireRequestPanel">
           <div class="panel-head">
             <h3>Log Job Request</h3>
@@ -3961,10 +3980,10 @@ function renderHireTable(){
   const rows = xlRows("hiring");
   document.getElementById("hireBody").innerHTML = rows.map(h=>{
     const i = hiringRecords.indexOf(h);
-    const cls = h.status==="Assigned"?"good":"warn";
+    const cls = h.status==="Assigned"?"good":h.status==="Cancelled"?"danger":"warn";
     const svLine = !h.sv || h.sv==="—" ? "—" : `${h.sv}${h.phone && h.phone!=="—" ? " ("+h.phone+")" : ""}`;
     let vehCell = "—";
-    if(h.status==="Assigned"){
+    if(h.status==="Assigned" || (h.status==="Cancelled" && hireAssignments(h).length)){
       vehCell = hireAssignments(h).map(a=>{
         const srcBadge = a.source==="Sendiri" ? badge(T("Sendiri"),"info") : badge(T("Sewa"),"neutral");
         const drv = a.driverName && a.driverName!=="—" ? `${escHtml(a.driverName)} ${a.driverPhone && a.driverPhone!=="—" ? "("+escHtml(a.driverPhone)+")" : ""}` : "";
@@ -3977,10 +3996,11 @@ function renderHireTable(){
     return `<tr><td style="font-weight:600;">${escHtml(h.item || h.unit)}</td><td class="mono-cell" style="text-align:center;">${qty}</td><td>${escHtml(h.company)}<br><span style="font-size:11px;color:var(--ink-soft);">${escHtml(h.project)}</span></td>
     <td class="mono-cell">${escHtml(h.branch||"—")}</td>
     <td class="mono-cell">${h.tarikh} ${h.masa && h.masa!=="—"?"· "+h.masa:""}</td><td class="loc-cell">${locationHtml(h.tempat)}</td><td>${escHtml(svLine)}</td>
-    <td>${vehCell}</td><td>${badge(h.status,cls)}</td><td style="white-space:nowrap;">${actionCell}${deleteBtn}</td></tr>`;
+    <td>${vehCell}</td><td>${badge(h.status,cls)}${h.status==="Cancelled" && h.cancelReason ? `<div style="font-size:10.5px;color:var(--danger);margin-top:3px;">${escHtml(h.cancelReason)}</div>` : ""}</td><td style="white-space:nowrap;">${actionCell}${deleteBtn}</td></tr>`;
   }).join("") || `<tr><td colspan="10" style="color:var(--faint);text-align:center;">No job records</td></tr>`;
   const cnt = document.getElementById("hireCount");
   if(cnt) cnt.textContent = `Showing ${rows.length} of ${hiringRecords.length} jobs`;
+  renderReqStatus();
   const clr = document.getElementById("hireClearAllBtn");
   if(clr) clr.style.display = xlAnyActive("hiring") ? "inline-block" : "none";
 }
@@ -4190,6 +4210,74 @@ function notifyHireWhatsApp(){
   if(!contact.phone){ A("Tiada no WhatsApp admin/PIC ditetapkan lagi. Sila admin isi di Settings."); return; }
   const text = `*Job Request Baru — ${h.unit}*\n\nCompany : ${h.company}\nBranch : ${h.branch}\nTarikh : ${h.tarikh}\nMasa : ${h.masa}\nProject : ${h.project}\nTempat : ${h.tempat}\nLoad : ${h.load}\nSv : ${h.sv}${h.phone && h.phone!=="—" ? " ("+h.phone+")" : ""}`;
   openWhatsApp(contact.phone, text);
+}
+
+/* ---- Requester page: view-only status of job requests + "Cancel job" ----
+   Requesters see whether their job is assigned (vehicle / driver) but cannot edit it.
+   Cancelling marks the job Cancelled and opens WhatsApp to each assigned driver / vendor. */
+function renderReqStatus(){
+  const body = document.getElementById("rsBody"); if(!body) return;
+  const bSel = document.getElementById("rs_branch");
+  if(!bSel.options.length) bSel.innerHTML = `<option value="">${escHtml(fleetI18n.tr("All branches"))}</option>` + BRANCH_CODES.map(b=>`<option value="${b}">${b}</option>`).join("");
+  const br = bSel.value, q = document.getElementById("rs_search").value.trim().toUpperCase();
+  const since = new Date(APP_TODAY_ISO); since.setDate(since.getDate()-7);
+  const sinceIso = since.toISOString().slice(0,10);
+  const rows = hiringRecords.filter(h=>{
+    const iso = dmyToIso(h.tarikh);
+    if(iso && iso < sinceIso && h.status!=="New") return false;     // recent jobs + anything still waiting
+    if(br && h.branch!==br) return false;
+    if(q && ![h.sv,h.project,h.tempat,h.company,h.item,h.unit,h.phone].join(" ").toUpperCase().includes(q)) return false;
+    return true;
+  }).sort((a,b)=>(dmyToIso(b.tarikh)||"").localeCompare(dmyToIso(a.tarikh)||"") || hiringRecords.indexOf(a)-hiringRecords.indexOf(b));
+  body.innerHTML = rows.map(h=>{
+    const i = hiringRecords.indexOf(h);
+    const asg = hireAssignments(h);
+    let status;
+    if(h.status==="Cancelled") status = `${badge(fleetI18n.tr("Cancelled"),"danger")}${h.cancelReason?`<div style="font-size:10.5px;color:var(--danger);margin-top:3px;">${escHtml(h.cancelReason)}</div>`:""}`;
+    else if(h.status==="Assigned") status = badge(fleetI18n.tr("Assigned"),"good") + asg.map(a=>`<div style="font-size:11.5px;margin-top:4px;"><b>${escHtml(a.vehicle||"")}</b>${a.driverName && a.driverName!=="—" ? `<br><span style="color:var(--ink-soft);">${escHtml(a.driverName)}</span>` : ""}</div>`).join("");
+    else status = badge(fleetI18n.tr("Waiting to be assigned"),"warn");
+    const sv = !h.sv || h.sv==="—" ? "—" : h.sv + (h.phone && h.phone!=="—" ? ` (${h.phone})` : "");
+    const act = h.status==="Cancelled" ? "" : `<button type="button" class="btn ghost" style="padding:4px 9px;font-size:11px;color:var(--danger);white-space:nowrap;" onclick="cancelJobRequest(${i})">✕ <span>${escHtml(fleetI18n.tr("Cancel Job"))}</span></button>`;
+    return `<tr${h.status==="Cancelled"?' style="opacity:.6;"':""}><td style="font-weight:600;">${escHtml(h.unit || h.item)}</td><td>${escHtml(h.company)}<br><span style="font-size:11px;color:var(--ink-soft);">${escHtml(h.project)}</span></td>
+      <td class="mono-cell">${escHtml(h.branch||"—")}</td><td class="mono-cell">${escHtml(h.tarikh)}${h.masa && h.masa!=="—" ? "<br>"+escHtml(h.masa) : ""}</td>
+      <td>${escHtml(String(h.tempat||"").replace(/https?:\/\/\S+/g,"").trim()||"—")}</td><td>${escHtml(sv)}</td><td>${status}</td><td>${act}</td></tr>`;
+  }).join("") || `<tr><td colspan="8" style="color:var(--faint);text-align:center;padding:16px;">${escHtml(fleetI18n.tr("No job requests"))}</td></tr>`;
+  document.getElementById("rsCount").textContent = fleetI18n.tr(`Showing ${rows.length} job(s) — last 7 days and jobs still waiting`);
+}
+async function cancelJobRequest(i){
+  const h0 = hiringRecords[i]; if(!h0) return;
+  const key = JSON.stringify([h0.unit,h0.company,h0.tarikh,h0.masa,h0.sv,h0.tempat]);
+  const reason = prompt(fleetI18n.tr(`Cancel this job?\n\n${h0.unit} — ${h0.company}\n${h0.tarikh} ${h0.masa||""}\n\nReason (optional):`), "");
+  if(reason===null) return;
+  await loadHiringRecords();          // latest copy, so changes made meanwhile are not overwritten
+  const h = hiringRecords.find(x=>JSON.stringify([x.unit,x.company,x.tarikh,x.masa,x.sv,x.tempat])===key);
+  if(!h){ A(fleetI18n.tr("This job could not be found — it may have been deleted by admin.")); renderHireTable(); return; }
+  h.prevStatus = h.status;
+  h.status = "Cancelled";
+  h.cancelReason = reason.trim().toUpperCase();
+  h.cancelledAt = new Date().toISOString();
+  await persistHiringRecords();
+  renderHiring();
+  showJobCancelPanel(h);
+}
+function jobCancelText(h, a){
+  return `*JOB CANCELLED / JOB DIBATALKAN*\n\nItem : ${h.unit||h.item}${a&&a.vehicle?`\nKenderaan : ${a.vehicle}`:""}\nCompany : ${h.company}\nProject : ${h.project}\nTarikh : ${h.tarikh}${h.masa&&h.masa!=="—"?" · "+h.masa:""}\nTempat : ${String(h.tempat||"").replace(/https?:\/\/\S+/g,"").trim()}\nSv : ${h.sv}${h.phone&&h.phone!=="—"?" ("+h.phone+")":""}${h.cancelReason?`\nSebab : ${h.cancelReason}`:""}\n\nMohon maaf, job di atas telah *DIBATALKAN*. Terima kasih.`;
+}
+function showJobCancelPanel(h){
+  const panel = document.getElementById("rsCancelPanel");
+  const drivers = hireAssignments(h).filter(a=>phoneToWaDigits(a.driverPhone && a.driverPhone!=="—" ? a.driverPhone : ""));
+  const admin = getBranchNotifyContact(h.branch);
+  window._jobCancel = {h, drivers, admin};
+  panel.innerHTML = `<div style="font-weight:700;margin-bottom:6px;">✓ <span>${escHtml(fleetI18n.tr("Job cancelled"))}</span> — ${escHtml(h.unit)} (${escHtml(h.tarikh)})</div>
+    <div style="font-size:12px;margin-bottom:8px;">${escHtml(drivers.length ? fleetI18n.tr("Inform the assigned driver / vendor:") : fleetI18n.tr("No driver / vendor assigned yet — inform the Fleet admin:"))}</div>
+    <div style="display:flex;flex-wrap:wrap;gap:8px;">
+      ${drivers.map((a,k)=>`<button type="button" class="btn" style="background:#25D366;color:#fff;" onclick="openWhatsApp(window._jobCancel.drivers[${k}].driverPhone, jobCancelText(window._jobCancel.h, window._jobCancel.drivers[${k}]))">📲 ${escHtml(a.driverName && a.driverName!=="—" ? a.driverName : a.vehicle)} (${escHtml(a.driverPhone)})</button>`).join("")}
+      ${admin.phone ? `<button type="button" class="btn ghost" onclick="openWhatsApp(window._jobCancel.admin.phone, jobCancelText(window._jobCancel.h))">📲 <span>${escHtml(fleetI18n.tr("Fleet admin"))}</span>: ${escHtml(admin.name)}</button>` : ""}
+      <button type="button" class="btn ghost" onclick="document.getElementById('rsCancelPanel').style.display='none'">${escHtml(fleetI18n.tr("Close"))}</button>
+    </div>`;
+  panel.style.display = "block";
+  panel.scrollIntoView({behavior:"smooth", block:"nearest"});
+  if(drivers.length===1) openWhatsApp(drivers[0].driverPhone, jobCancelText(h, drivers[0]));
 }
 
 const HIRE_ELIGIBLE_CATEGORIES = ["LORRY TIPPER", "LORRY CRANE/ SELF LOADER"];
