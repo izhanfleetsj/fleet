@@ -510,6 +510,10 @@
     ["Record Status","Status Rekod"],
     ["Totals (shown)","Jumlah (dipaparkan)"],
     ["Period","Tempoh"],
+    ["vehicle not in register","kenderaan tiada dalam daftar"],
+    ["No ★ selected yet","Belum ada ★ dipilih"],
+    ["Different from the ★ quote","Berbeza dengan sebut harga ★"],
+    ["Sync to register","Selaras ke daftar"],
     ["The selected quote updates the Insurance Register and Insurance Database automatically.","Sebut harga yang dipilih mengemas kini Daftar Insurans dan Pangkalan Data Insurans secara automatik."],
     ["after rebate","selepas rebat"],
     ["From Insurance Register","Dari Daftar Insurans"],
@@ -905,6 +909,7 @@
   ];
 
   const TEMPLATES = [
+    ["Insurance Register updated for {a} vehicle(s).","Daftar Insurans dikemas kini untuk {a} kenderaan."],
     ["Create {a} record(s) from the Insurance Register? NCD and Basic Premium still need to be filled in.","Cipta {a} rekod dari Daftar Insurans? NCD dan Premium Asas masih perlu diisi."],
     ["Showing {a} of {b} records","Paparan {a} daripada {b} rekod"],
     ["Replace the existing comparison for {a} with the PDF?","Ganti perbandingan sedia ada untuk {a} dengan PDF ini?"],

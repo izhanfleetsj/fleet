@@ -979,6 +979,7 @@ body:not(.is-admin) .admin-only{display:none !important;}
             <select id="icNewVeh" style="max-width:300px;"></select>
             <button type="button" class="btn yellow" onclick="newInsComparison()">+ <span>New comparison</span></button>
             <button type="button" class="btn ghost" onclick="printInsMonthlySummary()">🖨 <span>Monthly summary</span></button>
+            <button type="button" class="btn ghost" onclick="icSyncNow()" title="Copy every ★ selected quote to the Insurance Register now">🔄 <span>Sync to register</span></button>
             <label class="btn ghost" style="cursor:pointer;margin:0;display:inline-flex;align-items:center;gap:4px;text-transform:none;letter-spacing:0;" title="Upload the broker's Vehicle Insurance Comparison PDF — the details are filled in automatically">📄 <span>Upload comparison PDF</span><input type="file" accept="application/pdf,.pdf" multiple hidden onchange="importInsComparisonPdfs(this)"></label>
             <span id="icImportMsg" style="font-size:11.5px;color:var(--ink-soft);"></span>
           </div>
@@ -2624,14 +2625,33 @@ function renderInsComparisons(){
   sel.innerHTML = `<option value="">${escHtml(fleetI18n.tr("— Select vehicle —"))}</option>` + (due.length?`<optgroup label="${escHtml(fleetI18n.tr("Insurance expires this month"))}">${due.map(opt).join("")}</optgroup>`:"") + `<optgroup label="${escHtml(fleetI18n.tr("All vehicles"))}">${rest.map(opt).join("")}</optgroup>`;
   const rows = icSortByRoadtax(insComparisons.filter(c=>c.month===ym));
   list.innerHTML = rows.length ? `<div class="fit-table" style="border:1px solid var(--line);border-radius:var(--radius);"><table>
-    <thead><tr><th>${escHtml(fleetI18n.tr("Vehicle No"))}</th><th>${escHtml(fleetI18n.tr("Company"))}</th><th>${escHtml(fleetI18n.tr("Quotations"))}</th><th>${escHtml(fleetI18n.tr("Lowest / selected"))}</th><th></th></tr></thead>
+    <thead><tr><th>${escHtml(fleetI18n.tr("Vehicle No"))}</th><th>${escHtml(fleetI18n.tr("Company"))}</th><th>${escHtml(fleetI18n.tr("Quotations"))}</th><th>${escHtml(fleetI18n.tr("Lowest / selected"))}</th><th>${escHtml(fleetI18n.tr("Insurance Register"))}</th><th></th></tr></thead>
     <tbody>${rows.map(c=>{ const b = icBest(c), q = b!=null ? c.quotes[b] : null;
       return `<tr><td style="font-weight:600;">${escHtml(c.plate)}</td><td>${escHtml(c.owner||"")}</td><td>${(c.quotes||[]).length}</td>
         <td>${q ? `${escHtml(q.broker||"")} · <b>${escHtml(q.insurer||"")}</b> — RM ${icFmt(icCalc(q,c.taxRate,c.ncd).total)}${c.selected!=null?" ★":""}` : "—"}</td>
+        <td>${icRegisterCell(c)}</td>
         <td style="white-space:nowrap;text-align:right;"><button type="button" class="btn ghost" style="padding:3px 9px;font-size:11px;" onclick="editInsComparison('${c.id}')">✎ <span>${escHtml(fleetI18n.tr("Edit"))}</span></button>
         <button type="button" class="btn ghost" style="padding:3px 9px;font-size:11px;" onclick="printInsComparison('${c.id}')">🖨</button>
         <button type="button" class="btn ghost" style="padding:3px 9px;font-size:11px;color:var(--danger);" onclick="deleteInsComparison('${c.id}')">✕</button></td></tr>`; }).join("")}</tbody></table></div>`
     : `<div style="font-size:12px;color:var(--faint);">${escHtml(fleetI18n.tr("No comparisons for this month yet — select a vehicle and click + New comparison."))}</div>`;
+}
+/* What the Insurance Register holds for this vehicle, and whether it matches the ★ quote. */
+function icRegisterCell(c){
+  const d = complianceData.find(x=>x.id===c.vehicleId);
+  if(!d) return `<span style="color:var(--danger);font-size:11px;">⚠ ${escHtml(fleetI18n.tr("vehicle not in register"))}</span>`;
+  const reg = `${escHtml(d.insurer||"—")} · RM ${d.insPremium!=null&&d.insPremium!==""?icFmt(d.insPremium):"—"}<br><span style="font-size:10.5px;color:var(--ink-soft);">${escHtml(d.insStart||"—")} – ${escHtml(d.insurance||"—")}</span>`;
+  if(c.selected==null) return `<span style="font-size:11px;">${reg}</span><br><span style="font-size:10.5px;color:var(--warn);">${escHtml(fleetI18n.tr("No ★ selected yet"))}</span>`;
+  const q = c.quotes[c.selected]; const t = icCalc(q, c.taxRate, c.ncd).total;
+  const same = String(d.insurer||"").toUpperCase()===String(q.insurer||"").toUpperCase() && Math.abs(Number(d.insPremium||0)-Number(t||0))<0.01
+    && (!c.periodTo || d.insurance===isoToDmySlash(c.periodTo)) && (!c.periodFrom || d.insStart===isoToDmySlash(c.periodFrom));
+  return `<span style="font-size:11px;">${reg}</span> ${same ? `<span style="color:var(--good);">✓</span>` : `<span style="color:var(--danger);" title="${escHtml(fleetI18n.tr("Different from the ★ quote"))}">⚠</span>`}`;
+}
+async function icSyncNow(){
+  let n = 0;
+  for(const c of insComparisons){ if(await icSyncToRegister(c, {batch:true})) n++; if(c.selected!=null && icLatestFor(c.vehicleId)===c) await upsertInsDbFromComparison(c, c.quotes[c.selected], {noSave:true}); }
+  await persistComplianceRegister(); await persistInsuranceDb();
+  renderInsurance(); renderComplianceTable();
+  const msg = document.getElementById("icImportMsg"); if(msg) msg.textContent = "✓ " + fleetI18n.tr(`Insurance Register updated for ${n} vehicle(s).`);
 }
 function newInsComparison(){
   const vid = document.getElementById("icNewVeh").value;
