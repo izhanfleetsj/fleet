@@ -2906,7 +2906,7 @@ const IDB_INPUTS = [   // [key, label, type]
   ["start","Start Date","date"], ["end","End Date","date"], ["cover","Type of Cover","cover"], ["yearMade","Year Made","year"],
   ["makeModel","Make & Model","text"], ["sumInsured","Sum Insured (RM)","num"], ["addCoverText","Additional Coverage","text"],
   ["addCoverRm","Additional Coverage (RM)","num"], ["ageLoading","Vehicle Age Loading (RM)","num"], ["perils","Special Perils (RM)","num"],
-  ["ncd","NCD (%)","num"], ["basic","Basic Contribution (RM)","num"], ["stamp","Stamp Duty (RM)","num"], ["excess","Excess (RM)","num"],
+  ["ncd","NCD (%)","num"], ["basic","Basic Premium (RM)","num"], ["rebate","Rebate (RM)","num"], ["stamp","Stamp Duty (RM)","num"], ["excess","Excess (RM)","num"],
   ["hpOwner","Hire Purchase Owners","text"], ["drivers","Authorised Drivers","text"], ["remarks","Remarks","text"],
 ];
 const idbN = v => v==null || v==="" || isNaN(Number(v)) ? 0 : Number(v);
@@ -2916,9 +2916,10 @@ function idbCalc(r){
   const basic = idbN(r.basic), ncdPct = idbN(r.ncd);
   const ncdRm = r2(basic * ncdPct / 100);
   const gross = r2(basic - ncdRm + idbN(r.addCoverRm) + idbN(r.ageLoading) + idbN(r.perils));
-  const tax = r2(gross * (r.taxRate!=null && r.taxRate!=="" ? idbN(r.taxRate) : 8) / 100);
+  const tax = r2(gross * (r.taxRate!=null && r.taxRate!=="" ? idbN(r.taxRate) : 8) / 100);   // tax on the gross before rebate (as on the broker's quote)
+  const rebate = Math.abs(idbN(r.rebate)), grossNet = r2(gross - rebate);
   const stamp = r.stamp==null || r.stamp==="" ? 10 : idbN(r.stamp);
-  const total = r2(gross + tax + stamp), exSd = r2(gross + tax);
+  const total = r2(grossNet + tax + stamp), exSd = r2(grossNet + tax);
   const rate = idbN(r.sumInsured) ? basic / idbN(r.sumInsured) * 100 : null;
   const v = idbVehicle(r), plate = v.plate || r.plate || "";
   // previous year: the same vehicle's latest record from an earlier policy year
@@ -2934,13 +2935,13 @@ function idbCalc(r){
   let renewal = "—";
   if(later) renewal = "Renewed";
   else if(r.end){ const days = Math.round((new Date(r.end) - new Date(APP_TODAY_ISO)) / 86400000); renewal = days < 0 ? "Expired — not renewed" : days <= 30 ? "Due for renewal" : "Active"; }
-  return { ncdRm, gross, tax, stamp, total, exSd, rate, prevEx, change, changePct, verdict, complete: complete ? "Complete" : "Incomplete", renewal, plate, company: v.company || r.company || "", vtype: v.category || r.vtype || "" };
+  return { ncdRm, gross, rebate, grossNet, tax, stamp, total, exSd, rate, prevEx, change, changePct, verdict, complete: complete ? "Complete" : "Incomplete", renewal, plate, company: v.company || r.company || "", vtype: v.category || r.vtype || "" };
 }
 function idbCalcBasic(r){   // without the previous-year lookup (avoids recursion)
   const basic = idbN(r.basic), ncdRm = r2(basic * idbN(r.ncd) / 100);
   const gross = r2(basic - ncdRm + idbN(r.addCoverRm) + idbN(r.ageLoading) + idbN(r.perils));
   const tax = r2(gross * (r.taxRate!=null && r.taxRate!=="" ? idbN(r.taxRate) : 8) / 100);
-  return { exSd: r2(gross + tax) };
+  return { exSd: r2(gross - Math.abs(idbN(r.rebate)) + tax) };
 }
 const idbMoney = v => v==null || v==="" ? "—" : Number(v).toLocaleString("en-MY",{minimumFractionDigits:2, maximumFractionDigits:2});
 const idbSigned = v => v==null ? "" : v < 0 ? `(${idbMoney(-v)})` : idbMoney(v);
@@ -2955,7 +2956,7 @@ xlRegister("insdb", {
     {key:"end", label:"Period", date:true, get:r=>isoToDmy(r.end)},
     {key:"sumInsured", label:"Sum Insured (RM)", num:true},
     {key:"ncd", label:"NCD (%)", num:true},
-    {key:"basic", label:"Basic Contribution (RM)", num:true},
+    {key:"basic", label:"Basic Premium (RM)", num:true},
     {key:"gross", label:"Gross Premium (RM)", num:true, get:r=>idbCalc(r).gross},
     {key:"tax", label:"Service Tax (RM)", num:true, get:r=>idbCalc(r).tax},
     {key:"total", label:"Total Payable (RM)", num:true, get:r=>idbCalc(r).total},
@@ -3011,7 +3012,7 @@ function openInsDbForm(id){
     <div style="font-weight:700;font-size:12.5px;margin-bottom:8px;">${escHtml(fleetI18n.tr(r ? "Edit record" : "New record"))}</div>
     <div class="form-row" style="grid-template-columns:repeat(4,1fr);">${IDB_INPUTS.slice(0,8).map(field).join("")}</div>
     <div class="form-row" style="grid-template-columns:repeat(4,1fr);">${IDB_INPUTS.slice(8,16).map(field).join("")}</div>
-    <div class="form-row" style="grid-template-columns:1fr 2fr 3fr 3fr;">${IDB_INPUTS.slice(16).map(field).join("")}</div>
+    <div class="form-row" style="grid-template-columns:1fr 1fr 2fr 3fr 3fr;">${IDB_INPUTS.slice(16).map(field).join("")}</div>
     <div id="idbPreview" style="font-size:12px;margin:6px 0;"></div>
     <div class="form-actions"><button type="button" class="btn ghost" onclick="document.getElementById('idbForm').style.display='none'">${escHtml(fleetI18n.tr("Cancel"))}</button>
       <button type="button" class="btn yellow" onclick="saveInsDbRecord()">💾 ${escHtml(fleetI18n.tr("Save"))}</button></div></div>`;
@@ -3038,8 +3039,25 @@ function idbFromRegister(d){
   if(d.insurancePolicy) o.remarks = `POLICY NO. ${d.insurancePolicy}`.toUpperCase();
   return o;
 }
+/* The vehicle's latest renewal comparison (selected ★, else cheapest quote) gives the
+   premium figures: Basic Premium, NCD, additional cover, stamp duty, excess, insurer. */
+function idbFromComparison(d){
+  const c = insComparisons.filter(x=>x.vehicleId===d.id).sort((a,b)=>String(b.month).localeCompare(String(a.month)))[0];
+  if(!c) return {};
+  const k = icBest(c); const q = k!=null ? c.quotes[k] : null; if(!q) return {};
+  const t = icCalc(q, c.taxRate, c.ncd);
+  const o = { basic: icNum(q.basic) ?? "", ncd: idbN(String(c.ncd||"").replace(/[%\s]/g,"")) || "", addCoverRm: t.addCover, rebate: t.rebate || "",
+    stamp: t.stamp, operator: String(q.insurer||"").toUpperCase(), taxRate: icNum(c.taxRate) ?? 8 };
+  if(icNum(q.sumAssured)) o.sumInsured = icNum(q.sumAssured);
+  if(icNum(q.excess)) o.excess = icNum(q.excess);
+  if(c.periodFrom){ o.start = c.periodFrom; o.policyYear = c.periodFrom.slice(0,4); }
+  if(c.periodTo) o.end = c.periodTo;
+  if(c.makeModel) o.makeModel = c.makeModel;
+  if(c.mfgYear) o.yearMade = c.mfgYear;
+  return o;
+}
 function idbFillFromRegister(d){
-  const o = idbFromRegister(d);
+  const o = { ...idbFromRegister(d), ...idbFromComparison(d) };
   Object.entries(o).forEach(([k,v])=>{ const el = document.getElementById("idb_"+k); if(!el) return; if(k==="policyYear" || k==="cover" || !el.value.trim()) el.value = v; });
 }
 /* Create this year's record for every vehicle in the Insurance Register that has insurance
@@ -3054,7 +3072,7 @@ async function importInsDbFromRegister(){
     made.push({ id: "idb" + Date.now().toString(36) + Math.random().toString(36).slice(2,6), vehicleId: d.id, plate: d.plate, taxRate: 8, stamp: 10, ncd: "", cover: "Comprehensive", ...o, policyYear: year });
   });
   if(!made.length){ A(fleetI18n.tr("Nothing new to import — every vehicle with insurance details already has a record for its policy year.")); return; }
-  if(!confirm(fleetI18n.tr(`Create ${made.length} record(s) from the Insurance Register? NCD and Basic Contribution still need to be filled in.`))) return;
+  if(!confirm(fleetI18n.tr(`Create ${made.length} record(s) from the Insurance Register? NCD and Basic Premium still need to be filled in.`))) return;
   insuranceDb.push(...made);
   await persistInsuranceDb(); renderInsuranceDb();
 }
@@ -3071,7 +3089,7 @@ function idbPreview(){
   const el = document.getElementById("idbPreview"); if(!el) return;
   const o = { ...(insuranceDb.find(x=>x.id===idbEditId)||{}), ...idbReadForm() };
   const c = idbCalc(o);
-  el.innerHTML = `<b>${escHtml(fleetI18n.tr("Automatic"))}:</b> NCD ${idbMoney(c.ncdRm)} · ${escHtml(fleetI18n.tr("Insurance Rate"))} ${c.rate!=null?c.rate.toFixed(2)+"%":"—"} · ${escHtml(fleetI18n.tr("Gross"))} ${idbMoney(c.gross)} · ${escHtml(fleetI18n.tr("Service Tax"))} ${idbMoney(c.tax)} · <b>${escHtml(fleetI18n.tr("Total"))} RM ${idbMoney(c.total)}</b>`
+  el.innerHTML = `<b>${escHtml(fleetI18n.tr("Automatic"))}:</b> NCD ${idbMoney(c.ncdRm)} · ${escHtml(fleetI18n.tr("Insurance Rate"))} ${c.rate!=null?c.rate.toFixed(2)+"%":"—"} · ${escHtml(fleetI18n.tr("Gross"))} ${idbMoney(c.gross)}${c.rebate?` · ${escHtml(fleetI18n.tr("after rebate"))} ${idbMoney(c.grossNet)}`:""} · ${escHtml(fleetI18n.tr("Service Tax"))} ${idbMoney(c.tax)} · <b>${escHtml(fleetI18n.tr("Total"))} RM ${idbMoney(c.total)}</b>`
     + (c.prevEx!=null ? ` · ${escHtml(fleetI18n.tr("vs previous year"))}: <span style="color:${c.change<0?"var(--good)":"var(--danger)"};font-weight:600;">${idbSigned(c.change)} (${c.changePct.toFixed(1)}%) ${escHtml(fleetI18n.tr(c.verdict))}</span>` : "");
 }
 async function saveInsDbRecord(){
@@ -3105,15 +3123,14 @@ async function upsertInsDbFromComparison(c, q){
     addCoverText: ["allDrivers","windscreenPrem","towing","pa","flood"].filter(k=>icNum(q[k])).map(k=>({allDrivers:"ALL DRIVERS",windscreenPrem:"WINDSCREEN",towing:"TOWING",pa:"PA",flood:"SPECIAL PERILS"}[k])).join(", "),
     addCoverRm: t.addCover, ageLoading: r.ageLoading || "", perils: "", ncd: idbN(String(c.ncd||"").replace(/[%\s]/g,"")), basic: icNum(q.basic) ?? r.basic,
     stamp: t.stamp, taxRate: icNum(c.taxRate) ?? 8, excess: icNum(q.excess) ?? r.excess ?? "", remarks: r.remarks || `${q.broker||""} · ${fleetI18n.tr("from comparison")}`.trim() });
-  // a rebate lowers the premium: keep it so the totals match the comparison
-  if(t.rebate) r.addCoverRm = r2(t.addCover - t.rebate);
+  r.rebate = t.rebate || "";   // kept separately so the totals match the comparison
   await persistInsuranceDb(); renderInsuranceDb();
 }
 function exportInsuranceDb(){
   if(typeof XLSX==="undefined"){ A("Excel library not loaded — please refresh the page."); return; }
-  const head = ["Policy Year","Vehicle No.","Company","Vehicle Type","Insurance Operator","Start Date","End Date","Type of Cover","Year Made","Make & Model","Sum Insured (RM)","Additional Coverage","Additional Coverage (RM)","Vehicle Age Loading (RM)","Special Perils (RM)","NCD","NCD (RM)","Basic Contribution (RM)","Insurance Rate (%)","Gross Premium (RM)","Service Tax (RM)","Stamp Duty (RM)","Total Amount Payable (RM)","Premium excl. Stamp Duty (RM)","Excess (RM)","Hire Purchase Owners","Authorised Drivers","Remarks","Record Status","Prev. Year Premium excl. SD (RM)","Change vs Prev. Year (RM)","Change %","Saving / Increase","Renewal Status"];
+  const head = ["Policy Year","Vehicle No.","Company","Vehicle Type","Insurance Operator","Start Date","End Date","Type of Cover","Year Made","Make & Model","Sum Insured (RM)","Additional Coverage","Additional Coverage (RM)","Vehicle Age Loading (RM)","Special Perils (RM)","NCD","NCD (RM)","Basic Premium (RM)","Insurance Rate (%)","Gross Premium (RM)","Rebate (RM)","Gross Premium after Rebate (RM)","Service Tax (RM)","Stamp Duty (RM)","Total Amount Payable (RM)","Premium excl. Stamp Duty (RM)","Excess (RM)","Hire Purchase Owners","Authorised Drivers","Remarks","Record Status","Prev. Year Premium excl. SD (RM)","Change vs Prev. Year (RM)","Change %","Saving / Increase","Renewal Status"];
   const rows = xlRows("insdb").map(r=>{ const c = idbCalc(r); return [Number(r.policyYear)||r.policyYear, c.plate, c.company, c.vtype, r.operator, isoToDmy(r.start), isoToDmy(r.end), r.cover, r.yearMade, r.makeModel,
-    idbN(r.sumInsured), r.addCoverText, idbN(r.addCoverRm), idbN(r.ageLoading), idbN(r.perils), idbN(r.ncd)/100, c.ncdRm, idbN(r.basic), c.rate!=null ? c.rate/100 : "", c.gross, c.tax, c.stamp, c.total, c.exSd,
+    idbN(r.sumInsured), r.addCoverText, idbN(r.addCoverRm), idbN(r.ageLoading), idbN(r.perils), idbN(r.ncd)/100, c.ncdRm, idbN(r.basic), c.rate!=null ? c.rate/100 : "", c.gross, c.rebate, c.grossNet, c.tax, c.stamp, c.total, c.exSd,
     idbN(r.excess), r.hpOwner, r.drivers, r.remarks, c.complete, c.prevEx ?? "", c.change ?? "", c.changePct!=null ? c.changePct/100 : "", c.verdict, c.renewal]; });
   const ws = XLSX.utils.aoa_to_sheet([["VEHICLE'S INSURANCE DATABASE - ALL POLICY YEARS"], [], head, ...rows]);
   const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Insurance Database");
