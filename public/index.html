@@ -954,6 +954,19 @@ body:not(.is-admin) .admin-only{display:none !important;}
           <div class="kpi"><div class="label">Total Annual Premium</div><div class="value mono" id="insPremiumTotal">—</div><div class="foot" id="insPremiumFoot">From premiums keyed in</div></div>
         </div>
 
+        <div class="panel admin-only">
+          <div class="panel-head">
+            <h3>Insurance Quotation Documents</h3>
+            <span class="sub" style="font-size:11px;color:var(--ink-soft);margin-left:auto;">Monthly quotation / comparison files covering several vehicles. A quotation for one vehicle goes in its row below (📑).</span>
+          </div>
+          <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:8px;">
+            <input type="month" id="insDocMonth" style="width:auto;">
+            <label class="btn yellow" style="cursor:pointer;margin:0;display:inline-flex;align-items:center;text-transform:none;letter-spacing:0;">📎 <span>Upload (PDF / Photo)</span><input type="file" accept="application/pdf,image/*" multiple hidden onchange="uploadInsuranceDocs(this)"></label>
+            <span id="insDocMsg" style="font-size:11.5px;color:var(--ink-soft);"></span>
+          </div>
+          <div id="insDocList"></div>
+        </div>
+
         <div class="panel">
           <div class="panel-head">
             <h3>Insurance Register</h3>
@@ -2398,6 +2411,7 @@ xlRegister("insurance", {
 });
 function renderInsurance(){
   if(!document.getElementById("insBody")) return;
+  renderInsuranceDocs();
   const withDate = complianceData.filter(d=>d.insurance);
   const premiums = complianceData.map(d=>Number(d.insPremium)).filter(n=>n>0);
   document.getElementById("insTotal").textContent = withDate.length;
@@ -2422,7 +2436,7 @@ function renderInsurance(){
       <td>${inp(d,"insurancePolicy",190,'class="mono-cell"')}<div style="display:flex;flex-wrap:wrap;gap:4px 6px;align-items:center;margin-top:4px;">
         ${d.insurancePolicyFile ? `<a class="map-link" href="/api/files/${encodeURIComponent(d.insurancePolicyFile)}" target="_blank" rel="noopener">📄 ${escHtml(fleetI18n.tr("View PDF"))}</a><button type="button" class="btn ghost" style="padding:2px 8px;font-size:10.5px;color:var(--danger);" title="${escHtml(fleetI18n.tr("Delete this PDF"))}" onclick="deleteInsurancePdf(${d.id})">✕</button>` : ""}
         <label class="btn ghost" style="cursor:pointer;margin:0;padding:2px 8px;font-size:10.5px;display:inline-flex;align-items:center;gap:4px;text-transform:none;letter-spacing:0;white-space:nowrap;" title="${escHtml(fleetI18n.tr("Upload the policy PDF for this vehicle"))}">📎 ${escHtml(fleetI18n.tr(d.insurancePolicyFile ? "Replace" : "Upload PDF"))}<input type="file" accept="application/pdf,.pdf" hidden onchange="uploadInsurancePdf(${d.id}, this)"></label>
-      </div></td>
+      </div>${insQuoteCellHtml(d)}</td>
       <td>${cover(d)}</td>
       <td>${num(d,"insSumInsured")}</td>
       <td>${num(d,"insPremium")}</td>
@@ -2457,6 +2471,82 @@ async function deleteInsurancePdf(id){
   await persistComplianceRegister();
   renderInsurance();
   try{ await fetch("/api/files/" + encodeURIComponent(fileId), { method:"DELETE", credentials:"same-origin", headers:{ "X-Requested-With":"fleet-app" } }); }catch(e){}
+}
+/* ---- Insurance quotations: per-vehicle files (d.insQuotes) and monthly documents that
+   cover several vehicles (own storage key). Admin only; files go to /api/files. ---- */
+const INS_DOCS_KEY = "fleetInsuranceDocs_v1";
+let insuranceDocs = [];
+async function loadInsuranceDocs(){
+  try{ const r = await window.storage.get(INS_DOCS_KEY, true); const v = r && JSON.parse(r.value); if(Array.isArray(v)) insuranceDocs = v; }catch(e){}
+}
+async function uploadAdminFile(file, prefix){
+  try{ file = await prShrinkImage(file); }catch(e){}
+  const type = file.type==="application/pdf" ? "application/pdf" : /png/.test(file.type) ? "image/png" : /webp/.test(file.type) ? "image/webp" : /jpe?g/.test(file.type) ? "image/jpeg" : "";
+  if(!type) throw new Error(`${file.name}: ${fleetI18n.tr("Only PDF or image files (JPG / PNG) are accepted.")}`);
+  if(file.size > 4*1024*1024) throw new Error(`${file.name}: ${fleetI18n.tr("File is too large (max 4 MB). Please reduce the file size and try again.")}`);
+  const ext = {"application/pdf":".pdf","image/png":".png","image/webp":".webp","image/jpeg":".jpg"}[type];
+  const id = `${prefix}-${Date.now().toString(36)}${Math.random().toString(36).slice(2,7)}${ext}`;
+  const r = await fetch("/api/files/" + encodeURIComponent(id), { method:"PUT", credentials:"same-origin",
+    headers:{ "Content-Type":type, "X-Requested-With":"fleet-app" }, body:file });
+  if(!r.ok){ let m = "HTTP " + r.status; try{ m = (await r.json()).error || m; }catch(e){} throw new Error(`${file.name}: ${m}`); }
+  return { id, type, name:file.name, uploadedAt: APP_TODAY_ISO };
+}
+function deleteServerFile(id){
+  return fetch("/api/files/" + encodeURIComponent(id), { method:"DELETE", credentials:"same-origin", headers:{ "X-Requested-With":"fleet-app" } }).catch(()=>{});
+}
+const fileLinkHtml = f => `<a class="map-link" href="/api/files/${encodeURIComponent(f.id)}" target="_blank" rel="noopener" title="${escHtml(f.name||"")}">${/pdf/.test(f.type)?"📄":"🖼"} ${escHtml(String(f.name||f.id).replace(/\.(pdf|jpe?g|png|webp)$/i,"").slice(0,28))}</a>`;
+function insQuoteCellHtml(d){
+  const list = d.insQuotes || [];
+  return `<div style="display:flex;flex-wrap:wrap;gap:4px 6px;align-items:center;margin-top:4px;border-top:1px dashed var(--line);padding-top:4px;">
+    <span style="font-size:10.5px;color:var(--ink-soft);">📑 ${escHtml(fleetI18n.tr("Quotation"))}:</span>
+    ${list.map((f,k)=>`${fileLinkHtml(f)}<button type="button" class="btn ghost" style="padding:2px 7px;font-size:10px;color:var(--danger);" title="${escHtml(fleetI18n.tr("Delete this file"))}" onclick="deleteInsuranceQuote(${d.id},${k})">✕</button>`).join("")}
+    <label class="btn ghost" style="cursor:pointer;margin:0;padding:2px 8px;font-size:10.5px;display:inline-flex;align-items:center;gap:4px;text-transform:none;letter-spacing:0;white-space:nowrap;">📎 ${escHtml(fleetI18n.tr("Upload"))}<input type="file" accept="application/pdf,image/*" multiple hidden onchange="uploadInsuranceQuotes(${d.id}, this)"></label>
+  </div>`;
+}
+async function uploadInsuranceQuotes(id, input){
+  if(currentRole!=="admin") return;
+  const rec = complianceData.find(d=>d.id===id), files = [...(input.files||[])];
+  input.value = "";
+  if(!rec || !files.length) return;
+  rec.insQuotes = rec.insQuotes || [];
+  for(const file of files){ try{ rec.insQuotes.push(await uploadAdminFile(file, "insq")); }catch(e){ A(e.message); } }
+  await persistComplianceRegister(); renderInsurance();
+}
+async function deleteInsuranceQuote(id, k){
+  if(currentRole!=="admin") return;
+  const rec = complianceData.find(d=>d.id===id); if(!rec || !rec.insQuotes || !rec.insQuotes[k]) return;
+  if(!confirm(fleetI18n.tr(`Delete ${rec.insQuotes[k].name || "this file"}?`))) return;
+  const [f] = rec.insQuotes.splice(k,1);
+  await persistComplianceRegister(); deleteServerFile(f.id); renderInsurance();
+}
+function renderInsuranceDocs(){
+  const el = document.getElementById("insDocList"); if(!el) return;
+  const m = document.getElementById("insDocMonth"); if(m && !m.value) m.value = APP_TODAY_ISO.slice(0,7);
+  const monthName = ym => { const [y,mo] = ym.split("-"); return new Date(+y, +mo-1, 1).toLocaleDateString(fleetI18n.lang==="ms"?"ms-MY":"en-GB",{month:"long", year:"numeric"}); };
+  const groups = {};
+  insuranceDocs.forEach((f,k)=>{ (groups[f.month||""] = groups[f.month||""] || []).push([f,k]); });
+  el.innerHTML = Object.keys(groups).sort().reverse().map(ym=>`<div style="display:flex;flex-wrap:wrap;gap:6px 10px;align-items:center;padding:6px 0;border-top:1px solid var(--line);">
+      <b style="min-width:120px;font-size:12px;">${escHtml(ym ? monthName(ym) : "—")}</b>
+      ${groups[ym].map(([f,k])=>`<span style="display:inline-flex;align-items:center;gap:4px;">${fileLinkHtml(f)}<button type="button" class="btn ghost" style="padding:2px 7px;font-size:10px;color:var(--danger);" onclick="deleteInsuranceDoc(${k})">✕</button></span>`).join("")}
+    </div>`).join("") || `<div style="font-size:12px;color:var(--faint);">${escHtml(fleetI18n.tr("No quotation documents yet"))}</div>`;
+}
+async function uploadInsuranceDocs(input){
+  if(currentRole!=="admin") return;
+  const files = [...(input.files||[])]; input.value = "";
+  const month = document.getElementById("insDocMonth").value || APP_TODAY_ISO.slice(0,7);
+  const msg = document.getElementById("insDocMsg");
+  msg.textContent = fleetI18n.tr("Uploading…");
+  for(const file of files){ try{ insuranceDocs.push({...await uploadAdminFile(file, "insd"), month}); }catch(e){ A(e.message); } }
+  try{ await window.storage.set(INS_DOCS_KEY, JSON.stringify(insuranceDocs), true); msg.textContent = "✓ " + fleetI18n.tr("Saved"); }
+  catch(e){ msg.textContent = ""; A(fleetI18n.tr("Could not save — please try again.")); }
+  renderInsuranceDocs();
+}
+async function deleteInsuranceDoc(k){
+  if(currentRole!=="admin" || !insuranceDocs[k]) return;
+  if(!confirm(fleetI18n.tr(`Delete ${insuranceDocs[k].name || "this file"}?`))) return;
+  const [f] = insuranceDocs.splice(k,1);
+  await window.storage.set(INS_DOCS_KEY, JSON.stringify(insuranceDocs), true);
+  deleteServerFile(f.id); renderInsuranceDocs();
 }
 async function uploadInsurancePdf(id, input){
   if(currentRole!=="admin") return;
@@ -6407,6 +6497,7 @@ function printComplianceCalendar(){
   await loadHolidays();
   await loadDisposePipeline();
   await importPurchaseInbox();
+  if(currentRole==="admin") await loadInsuranceDocs();
   await loadTickets();
   await loadHiringRecords();
   await loadDailyMovements();

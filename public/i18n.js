@@ -423,6 +423,12 @@
     ["Disposal requested + approved","Pelupusan dimohon + diluluskan"],
     ["New vehicles minus disposed","Kenderaan baharu tolak yang dilupus"],
     ["Stage","Peringkat"],
+    ["Insurance Quotation Documents","Dokumen Sebut Harga Insurans"],
+    ["Monthly quotation / comparison files covering several vehicles. A quotation for one vehicle goes in its row below (📑).","Fail sebut harga / perbandingan bulanan untuk beberapa kenderaan. Sebut harga untuk satu kenderaan dimuat naik pada barisnya di bawah (📑)."],
+    ["No quotation documents yet","Belum ada dokumen sebut harga"],
+    ["Delete this file","Padam fail ini"],
+    ["Upload","Muat naik"],
+    ["Could not save — please try again.","Tidak dapat simpan — sila cuba lagi."],
     ["Purchase Order (PO) — if the job needs one, e.g. collecting premix","Purchase Order (PO) — jika job memerlukan PO, cth. ambil premix"],
     ["Upload (PDF / Photo)","Muat naik (PDF / Gambar)"],
     ["My Job Requests — Status","Status Job Request Saya"],
@@ -784,6 +790,7 @@
   ];
 
   const TEMPLATES = [
+    ["Delete {a}?","Padam {a}?"],
     ["Showing {a} job(s) — yesterday, today and upcoming","Paparan {a} job — semalam, hari ini dan akan datang"],
     ["Cancel this job?\n\n{a} — {b}\n{c} {d}\n\nReason (optional):","Batalkan job ini?\n\n{a} — {b}\n{c} {d}\n\nSebab (pilihan):"],
     ["Request sent — {a}. The printed form needs the head of department's signature.","Permohonan dihantar — {a}. Borang yang dicetak perlu ditandatangan oleh ketua jabatan."],
