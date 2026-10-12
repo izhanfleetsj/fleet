@@ -774,6 +774,7 @@ body:not(.is-admin) .admin-only{display:none !important;}
               <option value="VAN">Van</option>
               <option value="4X4">4x4</option>
               <option value="MOTORCYCLE">Motorcycle</option>
+              <option value="TRAILER">Trailer</option>
             </select></div>
             <div><label for="hr_qty">Unit (number of vehicles needed)</label><input id="hr_qty" type="number" min="1" max="50" step="1" value="1" inputmode="numeric"></div>
           </div>
@@ -4339,7 +4340,7 @@ function matchCompanyName(name, list){
 /* "2 LORI TIPPER", "LORRY KREN", "1 unit backhoe" → {item, qty} */
 function matchHireItem(text){
   const t = String(text||"").toUpperCase();
-  const rules = [[/TIPPER/,"LORRY TIPPER"],[/SELF\s*-?\s*LOAD/,"SELF LOADER"],[/CRANE|KREN/,"LORRY CRANE"],
+  const rules = [[/TRAIL+ER|TREL+ER|TREIL+ER|TREILAR/,"TRAILER"],[/TIPPER/,"LORRY TIPPER"],[/SELF\s*-?\s*LOAD/,"SELF LOADER"],[/CRANE|KREN/,"LORRY CRANE"],
     [/EXCAVATOR|EKSKAVATOR|EXCA\b|PC\s*\d{2,3}\b|SK\s*\d{2,3}\b/,"EXCAVATOR"],[/BACK\s*HOE|BACHOE|JCB/,"BACKHOE"],
     [/SMALL\s*LOR|LOR+[IY]\s*KECIL|\b[13]\s*TAN\b|\b[13]\s*TON/,"SMALL LORRY"],[/\bVAN\b/,"VAN"],[/4\s*X\s*4|4WD|PICK\s*-?\s*UP|HILUX/,"4X4"],[/MOTOR|M\/CYCLE/,"MOTORCYCLE"]];
   const hit = rules.find(([re])=>re.test(t));
