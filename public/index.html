@@ -2499,8 +2499,8 @@ const IC_ROWS = [   // [key, label, type, section]
   ["insurer","Insurance Company","text","bench"], ["plan","Plan Name","text","bench"],
   ["sumAssured","Sum Assured (RM)","num","bench"], ["windscreen","Windscreen Coverage","num","bench"], ["excess","Excess","num","bench"],
   ["allDrivers","All Drivers","num","ben"], ["waiver","Waiver of Betterment","yn","ben"], ["windscreenPrem","Windscreen Coverage","num","ben"],
-  ["towing","Unlimited Towing","num","ben"], ["pa","Personal Accident","num","ben"], ["flood","Special Peril including Flood","num","ben"],
-  ["basic","Basic Premium (RM)","num","prem"], ["ncb","NCB (RM)","calc","prem"], ["addCover","Additional Cover (RM)","calc","prem"], ["stamp","Stamp Duty (RM)","num","prem"],
+  ["towing","Unlimited Towing","num","ben"], ["pa","Personal Accident","num","ben"], ["flood","Special Peril including Flood","num","ben"], ["addCover","Additional Cover (RM)","calc","ben"],
+  ["basic","Basic Premium (RM)","num","prem"], ["ncb","NCB (RM)","calc","prem"], ["stamp","Stamp Duty (RM)","num","prem"],
 ];
 const icNum = v => v==null || v==="" || isNaN(Number(v)) ? null : Number(v);
 function icCalc(q, taxRate, ncd){
@@ -2601,7 +2601,6 @@ function editInsComparison(id){
     <div style="overflow-x:auto;margin-top:10px;"><table class="ic-grid">
       <tr class="ic-head"><th>${escHtml(fleetI18n.tr("Broker / Agency"))}</th>${c.quotes.map((q,n)=>`<td>${inp(`q.${n}.broker`, q.broker, 'class="dsp-up" placeholder="e.g. IN TOUCH"')}</td>`).join("")}</tr>
       ${qRows}
-      ${calcRow("Total Additional Cover","benefit","ic-tot")}
       ${calcRow("Gross Premium (RM)","gross","ic-tot")}
       ${calcRow("Service Tax (RM)","tax")}
       ${calcRow("Total (RM)","total","ic-total")}
