@@ -2584,6 +2584,11 @@ function icBest(c){
   if(c.selected!=null && c.quotes[c.selected]) return c.selected;
   return totals.length ? totals.sort((a,b)=>a.t-b.t)[0].k : null;
 }
+/* Earliest road tax expiry first (then insurance expiry, then plate). */
+function icSortByRoadtax(list){
+  const key = c => { const d = complianceData.find(x=>x.id===c.vehicleId) || {}; return [dmyToIso(d.roadTax)||"9999", dmyToIso(d.insurance)||"9999", String(c.plate)]; };
+  return list.slice().sort((a,b)=>{ const x = key(a), y = key(b); return x[0].localeCompare(y[0]) || x[1].localeCompare(y[1]) || x[2].localeCompare(y[2]); });
+}
 function renderInsComparisons(){
   const list = document.getElementById("icList"); if(!list) return;
   const ym = icMonthVal();
@@ -2593,7 +2598,7 @@ function renderInsComparisons(){
   const rest = complianceData.filter(d=>!due.includes(d)).sort((a,b)=>String(a.plate).localeCompare(String(b.plate)));
   const opt = d => `<option value="${d.id}">${escHtml(d.plate)} — ${escHtml(d.company)}${d.insurance?` · ${escHtml(d.insurance)}`:""}</option>`;
   sel.innerHTML = `<option value="">${escHtml(fleetI18n.tr("— Select vehicle —"))}</option>` + (due.length?`<optgroup label="${escHtml(fleetI18n.tr("Insurance expires this month"))}">${due.map(opt).join("")}</optgroup>`:"") + `<optgroup label="${escHtml(fleetI18n.tr("All vehicles"))}">${rest.map(opt).join("")}</optgroup>`;
-  const rows = insComparisons.filter(c=>c.month===ym);
+  const rows = icSortByRoadtax(insComparisons.filter(c=>c.month===ym));
   list.innerHTML = rows.length ? `<div class="fit-table" style="border:1px solid var(--line);border-radius:var(--radius);"><table>
     <thead><tr><th>${escHtml(fleetI18n.tr("Vehicle No"))}</th><th>${escHtml(fleetI18n.tr("Company"))}</th><th>${escHtml(fleetI18n.tr("Quotations"))}</th><th>${escHtml(fleetI18n.tr("Lowest / selected"))}</th><th></th></tr></thead>
     <tbody>${rows.map(c=>{ const b = icBest(c), q = b!=null ? c.quotes[b] : null;
@@ -2909,7 +2914,7 @@ function printInsComparison(id){
 }
 function printInsMonthlySummary(){
   const ym = icMonthVal();
-  const rows = insComparisons.filter(c=>c.month===ym);
+  const rows = icSortByRoadtax(insComparisons.filter(c=>c.month===ym));
   if(!rows.length){ A(fleetI18n.tr("No comparisons for this month yet — select a vehicle and click + New comparison.")); return; }
   const w = window.open("", "_blank"); if(!w){ A(fleetI18n.tr("Please allow pop-ups to print the report.")); return; }
   const e = x => escHtml(x==null?"":String(x));
