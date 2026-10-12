@@ -2722,6 +2722,10 @@ async function icApplyToRegister(){
   const t = icCalc(q, c.taxRate, c.ncd).total;
   if(!confirm(fleetI18n.tr(`Update ${d.plate} in the Insurance Register with ${q.insurer} — RM ${icFmt(t)}?`))) return;
   d.insurer = q.insurer; if(t) d.insPremium = t; if(icNum(q.sumAssured)) d.insSumInsured = icNum(q.sumAssured);
+  // plan name → Cover (Comprehensive / Third Party, Fire & Theft / Third Party)
+  const plan = String(q.plan||"").toUpperCase();
+  const cover = /COMPRE/.test(plan) ? "Comprehensive" : /FIRE|THEFT|TPFT/.test(plan) ? "Third Party, Fire & Theft" : /THIRD|\bTP\b/.test(plan) ? "Third Party" : null;
+  if(cover) d.insCover = cover;
   if(c.periodFrom) d.insStart = isoToDmySlash(c.periodFrom);
   if(c.periodTo){ d.insurance = isoToDmySlash(c.periodTo); d.insuranceStatus = calcComplianceStatus(d.insurance); }
   await persistComplianceRegister(); renderInsurance(); renderComplianceTable();
