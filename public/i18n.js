@@ -480,6 +480,7 @@
     ["Select a quote (★) first.","Pilih sebut harga (★) dahulu."],
     ["Insurance Register updated.","Daftar Insurans dikemas kini."],
     ["auto","auto"],
+    ["Auto: Basic Premium × NCD %","Auto: Premium Asas × NCD %"],
     ["Purchase Order (PO) — if the job needs one, e.g. collecting premix","Purchase Order (PO) — jika job memerlukan PO, cth. ambil premix"],
     ["Upload (PDF / Photo)","Muat naik (PDF / Gambar)"],
     ["My Job Requests — Status","Status Job Request Saya"],
