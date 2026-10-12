@@ -310,6 +310,17 @@ label{font-size:11px;font-weight:600;color:var(--ink-soft);text-transform:upperc
 .stage-chip{border:1px solid var(--line);background:var(--panel-2);color:var(--ink);border-radius:999px;padding:4px 11px;font-size:11.5px;cursor:pointer;font-family:inherit;}
 .stage-chip b{margin-left:4px;}
 .dsp-up{text-transform:uppercase;}
+.ic-editor{border:1px solid var(--yellow-deep);background:var(--note-bg);border-radius:var(--radius);padding:12px;}
+.ic-two{display:grid;grid-template-columns:1.3fr 1fr;gap:12px;} @media (max-width:860px){ .ic-two{grid-template-columns:1fr;} }
+.ic-kv,.ic-grid{border-collapse:collapse;width:100%;background:var(--panel);}
+.ic-kv th,.ic-kv td,.ic-grid th,.ic-grid td{border:1px solid var(--line);padding:3px 5px;font-size:11.5px;text-align:left;}
+.ic-kv th,.ic-grid th{white-space:nowrap;font-weight:600;width:1%;}
+.ic-kv input,.ic-grid input,.ic-grid select{width:100%;min-width:84px;font-size:11.5px;padding:4px 6px;}
+.ic-grid .ic-num{text-align:right;font-family:'IBM Plex Mono',monospace;}
+.ic-sec td{background:#b7dde8;color:#1C1E1F;font-weight:700;font-size:11px;text-transform:uppercase;}
+.ic-calc{text-align:right;font-family:'IBM Plex Mono',monospace;color:var(--ink-soft);}
+.ic-tot .ic-calc{font-weight:700;color:var(--ink);} .ic-total .ic-calc,.ic-total th{font-weight:700;color:var(--ink);font-size:12.5px;}
+.ic-calc.ic-best{background:#92d050;color:#1C1E1F;}
 .dsp-actions{display:flex;flex-wrap:wrap;gap:4px;justify-content:flex-end;width:98px;margin-left:auto;}
 #disposeBody .badge{white-space:normal;line-height:1.25;display:inline-block;}
 #disposeBody td,#disposeHeadRow th{padding-left:5px;padding-right:5px;}
@@ -954,17 +965,19 @@ body:not(.is-admin) .admin-only{display:none !important;}
           <div class="kpi"><div class="label">Total Annual Premium</div><div class="value mono" id="insPremiumTotal">—</div><div class="foot" id="insPremiumFoot">From premiums keyed in</div></div>
         </div>
 
-        <div class="panel admin-only">
+        <div class="panel admin-only" id="icPanel">
           <div class="panel-head">
-            <h3>Insurance Quotation Documents</h3>
-            <span class="sub" style="font-size:11px;color:var(--ink-soft);margin-left:auto;">Monthly quotation / comparison files covering several vehicles. A quotation for one vehicle goes in its row below (📑).</span>
+            <h3>Insurance Renewal Comparison</h3>
+            <span class="sub" style="font-size:11px;color:var(--ink-soft);margin-left:auto;">Fill in the quotations — print the vehicle comparison and the monthly summary</span>
           </div>
-          <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:8px;">
-            <input type="month" id="insDocMonth" style="width:auto;">
-            <label class="btn yellow" style="cursor:pointer;margin:0;display:inline-flex;align-items:center;text-transform:none;letter-spacing:0;">📎 <span>Upload (PDF / Photo)</span><input type="file" accept="application/pdf,image/*" multiple hidden onchange="uploadInsuranceDocs(this)"></label>
-            <span id="insDocMsg" style="font-size:11.5px;color:var(--ink-soft);"></span>
+          <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:10px;">
+            <input type="month" id="icMonth" style="width:auto;" onchange="renderInsComparisons()">
+            <select id="icNewVeh" style="max-width:300px;"></select>
+            <button type="button" class="btn yellow" onclick="newInsComparison()">+ <span>New comparison</span></button>
+            <button type="button" class="btn ghost" onclick="printInsMonthlySummary()">🖨 <span>Monthly summary</span></button>
           </div>
-          <div id="insDocList"></div>
+          <div id="icList"></div>
+          <div id="icEditor" style="display:none;margin-top:12px;"></div>
         </div>
 
         <div class="panel">
@@ -2411,7 +2424,7 @@ xlRegister("insurance", {
 });
 function renderInsurance(){
   if(!document.getElementById("insBody")) return;
-  renderInsuranceDocs();
+  if(currentRole==="admin") renderInsComparisons();
   const withDate = complianceData.filter(d=>d.insurance);
   const premiums = complianceData.map(d=>Number(d.insPremium)).filter(n=>n>0);
   document.getElementById("insTotal").textContent = withDate.length;
@@ -2436,7 +2449,7 @@ function renderInsurance(){
       <td>${inp(d,"insurancePolicy",190,'class="mono-cell"')}<div style="display:flex;flex-wrap:wrap;gap:4px 6px;align-items:center;margin-top:4px;">
         ${d.insurancePolicyFile ? `<a class="map-link" href="/api/files/${encodeURIComponent(d.insurancePolicyFile)}" target="_blank" rel="noopener">📄 ${escHtml(fleetI18n.tr("View PDF"))}</a><button type="button" class="btn ghost" style="padding:2px 8px;font-size:10.5px;color:var(--danger);" title="${escHtml(fleetI18n.tr("Delete this PDF"))}" onclick="deleteInsurancePdf(${d.id})">✕</button>` : ""}
         <label class="btn ghost" style="cursor:pointer;margin:0;padding:2px 8px;font-size:10.5px;display:inline-flex;align-items:center;gap:4px;text-transform:none;letter-spacing:0;white-space:nowrap;" title="${escHtml(fleetI18n.tr("Upload the policy PDF for this vehicle"))}">📎 ${escHtml(fleetI18n.tr(d.insurancePolicyFile ? "Replace" : "Upload PDF"))}<input type="file" accept="application/pdf,.pdf" hidden onchange="uploadInsurancePdf(${d.id}, this)"></label>
-      </div>${insQuoteCellHtml(d)}</td>
+      </div></td>
       <td>${cover(d)}</td>
       <td>${num(d,"insSumInsured")}</td>
       <td>${num(d,"insPremium")}</td>
@@ -2472,82 +2485,265 @@ async function deleteInsurancePdf(id){
   renderInsurance();
   try{ await fetch("/api/files/" + encodeURIComponent(fileId), { method:"DELETE", credentials:"same-origin", headers:{ "X-Requested-With":"fleet-app" } }); }catch(e){}
 }
-/* ---- Insurance quotations: per-vehicle files (d.insQuotes) and monthly documents that
-   cover several vehicles (own storage key). Admin only; files go to /api/files. ---- */
-const INS_DOCS_KEY = "fleetInsuranceDocs_v1";
-let insuranceDocs = [];
-async function loadInsuranceDocs(){
-  try{ const r = await window.storage.get(INS_DOCS_KEY, true); const v = r && JSON.parse(r.value); if(Array.isArray(v)) insuranceDocs = v; }catch(e){}
+/* ===================== INSURANCE RENEWAL COMPARISON =====================
+   Admin fills one template per vehicle (vehicle info, previous insurance, and the quotation
+   from each insurer, grouped by broker / agency). Totals are worked out automatically.
+   Prints: the vehicle comparison (like the broker's "Vehicle Insurance Comparison") and a
+   monthly summary of every vehicle's quotes (cheapest / selected highlighted). */
+const IC_KEY = "fleetInsuranceComparisons_v1";
+let insComparisons = [], icEditId = null;
+const IC_MONTHS_MS = ["JANUARI","FEBRUARI","MAC","APRIL","MEI","JUN","JULAI","OGOS","SEPTEMBER","OKTOBER","NOVEMBER","DISEMBER"];
+const IC_MONTHS_EN = ["JANUARY","FEBRUARY","MARCH","APRIL","MAY","JUNE","JULY","AUGUST","SEPTEMBER","OCTOBER","NOVEMBER","DECEMBER"];
+const IC_ROWS = [   // [key, label, type, section]
+  ["insurer","Insurance Company","text","bench"], ["plan","Plan Name","text","bench"],
+  ["sumAssured","Sum Assured (RM)","num","bench"], ["windscreen","Windscreen Coverage","num","bench"], ["excess","Excess","num","bench"],
+  ["allDrivers","All Drivers","num","ben"], ["waiver","Waiver of Betterment","yn","ben"], ["windscreenPrem","Windscreen Coverage","num","ben"],
+  ["towing","Unlimited Towing","num","ben"], ["pa","Personal Accident","num","ben"], ["flood","Special Peril including Flood","num","ben"],
+  ["basic","Basic Premium (RM)","num","prem"], ["ncb","NCB (RM)","num","prem"], ["addCover","Additional Cover (RM)","num","prem"], ["stamp","Stamp Duty (RM)","num","prem"],
+];
+const icNum = v => v==null || v==="" || isNaN(Number(v)) ? null : Number(v);
+function icCalc(q, taxRate){
+  const benefit = ["allDrivers","windscreenPrem","towing","pa","flood"].reduce((t,k)=>t+(icNum(q[k])||0),0);
+  const addCover = icNum(q.addCover)!=null ? icNum(q.addCover) : benefit;
+  const gross = (icNum(q.basic)||0) - (icNum(q.ncb)||0) + addCover;
+  const tax = Math.round(gross * (icNum(taxRate)!=null ? icNum(taxRate) : 8)) / 100;
+  const stamp = icNum(q.stamp)!=null ? icNum(q.stamp) : 10;
+  const hasPremium = icNum(q.basic)!=null;
+  return { benefit, addCover, gross, tax, stamp, total: hasPremium ? Math.round((gross + tax + stamp)*100)/100 : (icNum(q.total)) };
 }
-async function uploadAdminFile(file, prefix){
-  try{ file = await prShrinkImage(file); }catch(e){}
-  const type = file.type==="application/pdf" ? "application/pdf" : /png/.test(file.type) ? "image/png" : /webp/.test(file.type) ? "image/webp" : /jpe?g/.test(file.type) ? "image/jpeg" : "";
-  if(!type) throw new Error(`${file.name}: ${fleetI18n.tr("Only PDF or image files (JPG / PNG) are accepted.")}`);
-  if(file.size > 4*1024*1024) throw new Error(`${file.name}: ${fleetI18n.tr("File is too large (max 4 MB). Please reduce the file size and try again.")}`);
-  const ext = {"application/pdf":".pdf","image/png":".png","image/webp":".webp","image/jpeg":".jpg"}[type];
-  const id = `${prefix}-${Date.now().toString(36)}${Math.random().toString(36).slice(2,7)}${ext}`;
-  const r = await fetch("/api/files/" + encodeURIComponent(id), { method:"PUT", credentials:"same-origin",
-    headers:{ "Content-Type":type, "X-Requested-With":"fleet-app" }, body:file });
-  if(!r.ok){ let m = "HTTP " + r.status; try{ m = (await r.json()).error || m; }catch(e){} throw new Error(`${file.name}: ${m}`); }
-  return { id, type, name:file.name, uploadedAt: APP_TODAY_ISO };
+function icBlankQuote(broker, insurer){ return { broker:broker||"", insurer:insurer||"", plan:"COMPREHENSIVE", waiver:"YES", stamp:10 }; }
+async function loadInsComparisons(){
+  try{ const r = await window.storage.get(IC_KEY, true); const v = r && JSON.parse(r.value); if(Array.isArray(v)) insComparisons = v; }catch(e){}
 }
-function deleteServerFile(id){
-  return fetch("/api/files/" + encodeURIComponent(id), { method:"DELETE", credentials:"same-origin", headers:{ "X-Requested-With":"fleet-app" } }).catch(()=>{});
+async function persistInsComparisons(){
+  try{ await window.storage.set(IC_KEY, JSON.stringify(insComparisons), true); setSyncStatus("✓ " + fleetI18n.tr("Saved") + " " + nowTimeStr()); }
+  catch(e){ A(fleetI18n.tr("Could not save — please try again.")); }
 }
-const fileLinkHtml = f => `<a class="map-link" href="/api/files/${encodeURIComponent(f.id)}" target="_blank" rel="noopener" title="${escHtml(f.name||"")}">${/pdf/.test(f.type)?"📄":"🖼"} ${escHtml(String(f.name||f.id).replace(/\.(pdf|jpe?g|png|webp)$/i,"").slice(0,28))}</a>`;
-function insQuoteCellHtml(d){
-  const list = d.insQuotes || [];
-  return `<div style="display:flex;flex-wrap:wrap;gap:4px 6px;align-items:center;margin-top:4px;border-top:1px dashed var(--line);padding-top:4px;">
-    <span style="font-size:10.5px;color:var(--ink-soft);">📑 ${escHtml(fleetI18n.tr("Quotation"))}:</span>
-    ${list.map((f,k)=>`${fileLinkHtml(f)}<button type="button" class="btn ghost" style="padding:2px 7px;font-size:10px;color:var(--danger);" title="${escHtml(fleetI18n.tr("Delete this file"))}" onclick="deleteInsuranceQuote(${d.id},${k})">✕</button>`).join("")}
-    <label class="btn ghost" style="cursor:pointer;margin:0;padding:2px 8px;font-size:10.5px;display:inline-flex;align-items:center;gap:4px;text-transform:none;letter-spacing:0;white-space:nowrap;">📎 ${escHtml(fleetI18n.tr("Upload"))}<input type="file" accept="application/pdf,image/*" multiple hidden onchange="uploadInsuranceQuotes(${d.id}, this)"></label>
-  </div>`;
+const icMonthVal = () => { const m = document.getElementById("icMonth"); if(m && !m.value) m.value = APP_TODAY_ISO.slice(0,7); return m ? m.value : APP_TODAY_ISO.slice(0,7); };
+const icFmt = v => v==null || v==="" ? "-" : Number(v).toLocaleString("en-MY",{minimumFractionDigits:2, maximumFractionDigits:2});
+function icBest(c){
+  const totals = (c.quotes||[]).map((q,k)=>({k, t: icCalc(q, c.taxRate).total})).filter(x=>x.t>0);
+  if(c.selected!=null && c.quotes[c.selected]) return c.selected;
+  return totals.length ? totals.sort((a,b)=>a.t-b.t)[0].k : null;
 }
-async function uploadInsuranceQuotes(id, input){
-  if(currentRole!=="admin") return;
-  const rec = complianceData.find(d=>d.id===id), files = [...(input.files||[])];
-  input.value = "";
-  if(!rec || !files.length) return;
-  rec.insQuotes = rec.insQuotes || [];
-  for(const file of files){ try{ rec.insQuotes.push(await uploadAdminFile(file, "insq")); }catch(e){ A(e.message); } }
-  await persistComplianceRegister(); renderInsurance();
+function renderInsComparisons(){
+  const list = document.getElementById("icList"); if(!list) return;
+  const ym = icMonthVal();
+  // vehicles to pick from: those whose insurance expires this month first
+  const sel = document.getElementById("icNewVeh");
+  const due = complianceData.filter(d=>(dmyToIso(d.insurance)||"").slice(0,7)===ym);
+  const rest = complianceData.filter(d=>!due.includes(d)).sort((a,b)=>String(a.plate).localeCompare(String(b.plate)));
+  const opt = d => `<option value="${d.id}">${escHtml(d.plate)} — ${escHtml(d.company)}${d.insurance?` · ${escHtml(d.insurance)}`:""}</option>`;
+  sel.innerHTML = `<option value="">${escHtml(fleetI18n.tr("— Select vehicle —"))}</option>` + (due.length?`<optgroup label="${escHtml(fleetI18n.tr("Insurance expires this month"))}">${due.map(opt).join("")}</optgroup>`:"") + `<optgroup label="${escHtml(fleetI18n.tr("All vehicles"))}">${rest.map(opt).join("")}</optgroup>`;
+  const rows = insComparisons.filter(c=>c.month===ym);
+  list.innerHTML = rows.length ? `<div class="fit-table" style="border:1px solid var(--line);border-radius:var(--radius);"><table>
+    <thead><tr><th>${escHtml(fleetI18n.tr("Vehicle No"))}</th><th>${escHtml(fleetI18n.tr("Company"))}</th><th>${escHtml(fleetI18n.tr("Quotations"))}</th><th>${escHtml(fleetI18n.tr("Lowest / selected"))}</th><th></th></tr></thead>
+    <tbody>${rows.map(c=>{ const b = icBest(c), q = b!=null ? c.quotes[b] : null;
+      return `<tr><td style="font-weight:600;">${escHtml(c.plate)}</td><td>${escHtml(c.owner||"")}</td><td>${(c.quotes||[]).length}</td>
+        <td>${q ? `${escHtml(q.broker||"")} · <b>${escHtml(q.insurer||"")}</b> — RM ${icFmt(icCalc(q,c.taxRate).total)}${c.selected!=null?" ★":""}` : "—"}</td>
+        <td style="white-space:nowrap;text-align:right;"><button type="button" class="btn ghost" style="padding:3px 9px;font-size:11px;" onclick="editInsComparison('${c.id}')">✎ <span>${escHtml(fleetI18n.tr("Edit"))}</span></button>
+        <button type="button" class="btn ghost" style="padding:3px 9px;font-size:11px;" onclick="printInsComparison('${c.id}')">🖨</button>
+        <button type="button" class="btn ghost" style="padding:3px 9px;font-size:11px;color:var(--danger);" onclick="deleteInsComparison('${c.id}')">✕</button></td></tr>`; }).join("")}</tbody></table></div>`
+    : `<div style="font-size:12px;color:var(--faint);">${escHtml(fleetI18n.tr("No comparisons for this month yet — select a vehicle and click + New comparison."))}</div>`;
 }
-async function deleteInsuranceQuote(id, k){
-  if(currentRole!=="admin") return;
-  const rec = complianceData.find(d=>d.id===id); if(!rec || !rec.insQuotes || !rec.insQuotes[k]) return;
-  if(!confirm(fleetI18n.tr(`Delete ${rec.insQuotes[k].name || "this file"}?`))) return;
-  const [f] = rec.insQuotes.splice(k,1);
-  await persistComplianceRegister(); deleteServerFile(f.id); renderInsurance();
+function newInsComparison(){
+  const vid = document.getElementById("icNewVeh").value;
+  const d = complianceData.find(x=>String(x.id)===vid);
+  if(!d){ A(fleetI18n.tr("Please select a vehicle first.")); return; }
+  const ym = icMonthVal();
+  const exist = insComparisons.find(c=>c.month===ym && c.vehicleId===d.id);
+  if(exist){ editInsComparison(exist.id); return; }
+  const exp = dmyToIso(d.insurance);
+  let from = "", to = "";
+  if(exp){ const f = new Date(exp); f.setDate(f.getDate()+1); from = f.toISOString().slice(0,10); const t = new Date(exp); t.setFullYear(t.getFullYear()+1); to = t.toISOString().slice(0,10); }
+  const c = { id: "ic" + Date.now().toString(36), month: ym, vehicleId: d.id, plate: d.plate, owner: d.company, makeModel: d.category||"", vehClass: "",
+    ncd: "", mfgYear: "", periodFrom: from, periodTo: to,
+    prev: { insurer: d.insurer||"", broker: "", sumInsured: d.insSumInsured||"", payable: d.insPremium||"" },
+    taxRate: 8, selected: null,
+    quotes: [icBlankQuote("IN TOUCH"), icBlankQuote("IN TOUCH"), icBlankQuote("IN TOUCH"), icBlankQuote("CIS")] };
+  insComparisons.push(c);
+  editInsComparison(c.id);
 }
-function renderInsuranceDocs(){
-  const el = document.getElementById("insDocList"); if(!el) return;
-  const m = document.getElementById("insDocMonth"); if(m && !m.value) m.value = APP_TODAY_ISO.slice(0,7);
-  const monthName = ym => { const [y,mo] = ym.split("-"); return new Date(+y, +mo-1, 1).toLocaleDateString(fleetI18n.lang==="ms"?"ms-MY":"en-GB",{month:"long", year:"numeric"}); };
-  const groups = {};
-  insuranceDocs.forEach((f,k)=>{ (groups[f.month||""] = groups[f.month||""] || []).push([f,k]); });
-  el.innerHTML = Object.keys(groups).sort().reverse().map(ym=>`<div style="display:flex;flex-wrap:wrap;gap:6px 10px;align-items:center;padding:6px 0;border-top:1px solid var(--line);">
-      <b style="min-width:120px;font-size:12px;">${escHtml(ym ? monthName(ym) : "—")}</b>
-      ${groups[ym].map(([f,k])=>`<span style="display:inline-flex;align-items:center;gap:4px;">${fileLinkHtml(f)}<button type="button" class="btn ghost" style="padding:2px 7px;font-size:10px;color:var(--danger);" onclick="deleteInsuranceDoc(${k})">✕</button></span>`).join("")}
-    </div>`).join("") || `<div style="font-size:12px;color:var(--faint);">${escHtml(fleetI18n.tr("No quotation documents yet"))}</div>`;
+function editInsComparison(id){
+  icEditId = id;
+  const c = insComparisons.find(x=>x.id===id); if(!c) return;
+  const ed = document.getElementById("icEditor");
+  const inp = (path, val, opts="") => `<input data-ic="${path}" value="${escHtml(val==null?"":val)}" ${opts}>`;
+  const info = [["owner","Company"],["plate","Vehicle No"],["makeModel","Make / Model"],["vehClass","Vehicle Class"],["ncd","NCD"],["mfgYear","MFG Year"]];
+  const prev = [["insurer","Insurer"],["broker","Broker"],["sumInsured","Amt Sum Insured"],["payable","Amt Payable"]];
+  const sec = {bench:"Benchmarking Comparison", ben:"Benefits / Premium (RM)", prem:"Premium Details"};
+  let lastSec = null;
+  const qRows = IC_ROWS.map(([k,label,type,s])=>{
+    let head = "";
+    if(s!==lastSec){ head = `<tr class="ic-sec"><td colspan="${c.quotes.length+1}">${escHtml(fleetI18n.tr(sec[s]))}</td></tr>`; lastSec = s; }
+    const cells = c.quotes.map((q,n)=> type==="yn"
+      ? `<td><select data-ic="q.${n}.${k}"><option ${q[k]!=="NO"?"selected":""}>YES</option><option ${q[k]==="NO"?"selected":""}>NO</option></select></td>`
+      : `<td>${inp(`q.${n}.${k}`, q[k], type==="num" ? `inputmode="decimal" class="ic-num" placeholder="${k==="addCover"?escHtml(fleetI18n.tr("auto")):k==="stamp"?"10":"-"}"` : `class="dsp-up"`)}</td>`).join("");
+    return head + `<tr><th>${escHtml(fleetI18n.tr(label))}</th>${cells}</tr>`;
+  }).join("");
+  const calcRow = (label, key, cls="") => `<tr class="${cls}"><th>${escHtml(fleetI18n.tr(label))}</th>${c.quotes.map((q,n)=>`<td class="ic-calc" data-calc="${n}.${key}"></td>`).join("")}</tr>`;
+  ed.innerHTML = `<div class="ic-editor">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;"><b style="font-size:13px;">${escHtml(fleetI18n.tr("Vehicle Insurance Comparison"))} — ${escHtml(c.plate)}</b>
+      <span style="margin-left:auto;font-size:11px;color:var(--ink-soft);" id="icSaved"></span></div>
+    <div class="ic-two">
+      <table class="ic-kv"><tr class="ic-sec"><td colspan="2">${escHtml(fleetI18n.tr("Vehicle Information"))}</td></tr>
+        ${info.map(([k,l])=>`<tr><th>${escHtml(fleetI18n.tr(l))}</th><td>${k==="plate" ? `<b>${escHtml(c.plate)}</b>` : inp(k, c[k], 'class="dsp-up"')}</td></tr>`).join("")}
+        <tr><th>${escHtml(fleetI18n.tr("Period of Coverage"))}</th><td style="display:flex;gap:4px;align-items:center;">${inp("periodFrom", c.periodFrom, 'type="date"')} – ${inp("periodTo", c.periodTo, 'type="date"')}</td></tr></table>
+      <table class="ic-kv"><tr class="ic-sec"><td colspan="2">${escHtml(fleetI18n.tr("Previous Insurance"))}</td></tr>
+        ${prev.map(([k,l])=>`<tr><th>${escHtml(fleetI18n.tr(l))}</th><td>${inp("prev."+k, c.prev[k], k==="insurer"||k==="broker"?'class="dsp-up"':'inputmode="decimal" class="ic-num"')}</td></tr>`).join("")}
+        <tr><th>${escHtml(fleetI18n.tr("Service Tax (%)"))}</th><td>${inp("taxRate", c.taxRate, 'inputmode="decimal" class="ic-num"')}</td></tr></table>
+    </div>
+    <div style="overflow-x:auto;margin-top:10px;"><table class="ic-grid">
+      <tr class="ic-head"><th>${escHtml(fleetI18n.tr("Broker / Agency"))}</th>${c.quotes.map((q,n)=>`<td>${inp(`q.${n}.broker`, q.broker, 'class="dsp-up" placeholder="e.g. IN TOUCH"')}</td>`).join("")}</tr>
+      ${qRows}
+      ${calcRow("Total Additional Cover","benefit","ic-tot")}
+      ${calcRow("Gross Premium (RM)","gross","ic-tot")}
+      ${calcRow("Service Tax (RM)","tax")}
+      ${calcRow("Total (RM)","total","ic-total")}
+      <tr><th>${escHtml(fleetI18n.tr("Selected"))}</th>${c.quotes.map((q,n)=>`<td style="text-align:center;"><label style="cursor:pointer;font-size:11.5px;"><input type="radio" name="icSel" ${c.selected===n?"checked":""} onchange="icSetSelected(${n})"> ★</label>
+        <button type="button" class="btn ghost" style="padding:1px 6px;font-size:10px;color:var(--danger);margin-left:4px;" title="${escHtml(fleetI18n.tr("Remove this column"))}" onclick="icRemoveQuote(${n})">✕</button></td>`).join("")}</tr>
+    </table></div>
+    <div class="form-actions" style="margin-top:10px;">
+      <button type="button" class="btn ghost" onclick="icAddQuote()">+ <span>Add insurer</span></button>
+      <button type="button" class="btn ghost" onclick="icApplyToRegister()" title="${escHtml(fleetI18n.tr("Copy the selected quote (insurer, sum insured, premium, period) to the Insurance Register"))}">⇩ <span>Apply selected to register</span></button>
+      <button type="button" class="btn ghost" onclick="printInsComparison('${c.id}')">🖨 <span>Print comparison</span></button>
+      <button type="button" class="btn yellow" onclick="icClose()">✓ <span>Done</span></button>
+    </div></div>`;
+  ed.style.display = "block";
+  ed.querySelectorAll("[data-ic]").forEach(el=>el.addEventListener("change", icFieldChanged));
+  icRefreshCalc();
+  ed.scrollIntoView({behavior:"smooth", block:"start"});
 }
-async function uploadInsuranceDocs(input){
-  if(currentRole!=="admin") return;
-  const files = [...(input.files||[])]; input.value = "";
-  const month = document.getElementById("insDocMonth").value || APP_TODAY_ISO.slice(0,7);
-  const msg = document.getElementById("insDocMsg");
-  msg.textContent = fleetI18n.tr("Uploading…");
-  for(const file of files){ try{ insuranceDocs.push({...await uploadAdminFile(file, "insd"), month}); }catch(e){ A(e.message); } }
-  try{ await window.storage.set(INS_DOCS_KEY, JSON.stringify(insuranceDocs), true); msg.textContent = "✓ " + fleetI18n.tr("Saved"); }
-  catch(e){ msg.textContent = ""; A(fleetI18n.tr("Could not save — please try again.")); }
-  renderInsuranceDocs();
+function icCur(){ return insComparisons.find(x=>x.id===icEditId); }
+async function icFieldChanged(ev){
+  const c = icCur(); if(!c) return;
+  const path = ev.target.dataset.ic.split(".");
+  let v = ev.target.value.trim();
+  if(ev.target.classList.contains("ic-num")){ v = v.replace(/,/g,""); v = v==="" ? "" : (isNaN(Number(v)) ? "" : Number(v)); }
+  else if(ev.target.classList.contains("dsp-up")) v = v.toUpperCase();
+  if(path[0]==="q") c.quotes[+path[1]][path[2]] = v;
+  else if(path[0]==="prev") c.prev[path[1]] = v;
+  else c[path[0]] = v;
+  if(ev.target.tagName==="INPUT" && ev.target.type!=="date") ev.target.value = v===""||v==null ? "" : v;
+  icRefreshCalc();
+  await persistInsComparisons();
+  const s = document.getElementById("icSaved"); if(s) s.textContent = "✓ " + fleetI18n.tr("Saved");
+  renderInsComparisons();
 }
-async function deleteInsuranceDoc(k){
-  if(currentRole!=="admin" || !insuranceDocs[k]) return;
-  if(!confirm(fleetI18n.tr(`Delete ${insuranceDocs[k].name || "this file"}?`))) return;
-  const [f] = insuranceDocs.splice(k,1);
-  await window.storage.set(INS_DOCS_KEY, JSON.stringify(insuranceDocs), true);
-  deleteServerFile(f.id); renderInsuranceDocs();
+function icRefreshCalc(){
+  const c = icCur(); if(!c) return;
+  const best = icBest(c);
+  c.quotes.forEach((q,n)=>{
+    const r = icCalc(q, c.taxRate);
+    ["benefit","gross","tax","total"].forEach(k=>{ const el = document.querySelector(`[data-calc="${n}.${k}"]`); if(el){ el.textContent = icFmt(r[k]); el.classList.toggle("ic-best", n===best && k==="total"); } });
+  });
 }
+async function icSetSelected(n){ const c = icCur(); if(!c) return; c.selected = n; icRefreshCalc(); await persistInsComparisons(); renderInsComparisons(); }
+async function icAddQuote(){ const c = icCur(); if(!c) return; if(c.quotes.length>=8){ A(fleetI18n.tr("Maximum 8 insurers.")); return; } c.quotes.push(icBlankQuote(c.quotes.length ? c.quotes[c.quotes.length-1].broker : "")); await persistInsComparisons(); editInsComparison(c.id); }
+async function icRemoveQuote(n){
+  const c = icCur(); if(!c) return;
+  if(!confirm(fleetI18n.tr("Remove this insurer column?"))) return;
+  c.quotes.splice(n,1);
+  if(c.selected===n) c.selected = null; else if(c.selected>n) c.selected--;
+  await persistInsComparisons(); editInsComparison(c.id); renderInsComparisons();
+}
+function icClose(){ document.getElementById("icEditor").style.display = "none"; icEditId = null; renderInsComparisons(); }
+async function deleteInsComparison(id){
+  const c = insComparisons.find(x=>x.id===id); if(!c) return;
+  if(!confirm(fleetI18n.tr(`Delete ${c.plate}?`))) return;
+  insComparisons = insComparisons.filter(x=>x.id!==id);
+  if(icEditId===id) icClose();
+  await persistInsComparisons(); renderInsComparisons();
+}
+async function icApplyToRegister(){
+  const c = icCur(); if(!c) return;
+  const b = icBest(c); const q = b!=null ? c.quotes[b] : null;
+  const d = complianceData.find(x=>x.id===c.vehicleId);
+  if(!q || !d){ A(fleetI18n.tr("Select a quote (★) first.")); return; }
+  const t = icCalc(q, c.taxRate).total;
+  if(!confirm(fleetI18n.tr(`Update ${d.plate} in the Insurance Register with ${q.insurer} — RM ${icFmt(t)}?`))) return;
+  d.insurer = q.insurer; if(t) d.insPremium = t; if(icNum(q.sumAssured)) d.insSumInsured = icNum(q.sumAssured);
+  if(c.periodFrom) d.insStart = isoToDmySlash(c.periodFrom);
+  if(c.periodTo){ d.insurance = isoToDmySlash(c.periodTo); d.insuranceStatus = calcComplianceStatus(d.insurance); }
+  await persistComplianceRegister(); renderInsurance(); renderComplianceTable();
+  A(fleetI18n.tr("Insurance Register updated."));
+}
+const IC_PRINT_CSS = `*{box-sizing:border-box;} body{font-family:Calibri,Arial,Helvetica,sans-serif;font-size:11px;color:#000;margin:0;}
+  .page{width:210mm;min-height:296mm;margin:0 auto;padding:16mm 14mm;page-break-after:always;} .page:last-child{page-break-after:auto;}
+  .land{width:297mm;min-height:209mm;}
+  h1{font-size:14px;margin:0;} table{border-collapse:collapse;width:100%;} td,th{border:1px solid #000;padding:3px 5px;font-size:10.5px;}
+  .bar{background:#b7dde8;font-weight:700;} .lbl{font-weight:700;} .r{text-align:right;} .c{text-align:center;}
+  .sel{outline:2.5px solid #e46c0a;outline-offset:-2px;} .tot td,.tot th{background:#b7dde8;font-weight:700;} .green{background:#92d050;}
+  .gap{height:12px;border:0;} @page{size:A4 portrait;margin:0;}`;
+function printInsComparison(id){
+  const c = insComparisons.find(x=>x.id===id); if(!c) return;
+  const w = window.open("", "_blank"); if(!w){ A(fleetI18n.tr("Please allow pop-ups to print the report.")); return; }
+  const e = x => escHtml(x==null?"":String(x));
+  const sel = icBest(c), Q = c.quotes, n = Q.length;
+  const cls = k => k===sel ? ' class="sel r"' : ' class="r"';
+  // broker header groups (consecutive columns with the same broker)
+  const groups = []; Q.forEach(q=>{ const b = (q.broker||"").trim() || "—"; const g = groups[groups.length-1]; if(g && g.b===b) g.n++; else groups.push({b, n:1}); });
+  const ym = c.month.split("-"); const monthName = IC_MONTHS_EN[+ym[1]-1];
+  const dmy = iso => iso ? iso.split("-").reverse().join("/") : "";
+  const numRow = (label, key, extra="") => `<tr${extra}><td>${label}</td>${Q.map((q,k)=>`<td${cls(k)}>${icFmt(q[key])}</td>`).join("")}</tr>`;
+  const calc = Q.map(q=>icCalc(q, c.taxRate));
+  const calcRow = (label, key, extra="") => `<tr${extra}><td>${label}</td>${calc.map((r,k)=>`<td${cls(k)}>${icFmt(r[key])}</td>`).join("")}</tr>`;
+  const kv = (l,v) => `<tr><td class="lbl" style="width:42%;">${l}</td><td>${e(v)}</td></tr>`;
+  const html = `<div class="page">
+    <table style="border:0;margin-bottom:12px;"><tr><td style="border:0;width:62%;"><h1>VEHICLE INSURANCE COMPARISON</h1></td><td style="border:0;"><h1 style="display:inline;">MONTH :</h1> <b style="margin-left:24px;">${monthName}</b></td></tr></table>
+    <table style="border:0;"><tr><td style="border:0;padding:0;width:62%;vertical-align:top;">
+      <table style="width:92%;"><tr><td class="bar" colspan="2">VEHICLE INFORMATION</td></tr>
+        ${kv("COMPANY",c.owner)}${kv("VEHICLE NO",c.plate)}${kv("MAKE / MODEL",c.makeModel)}${kv("VEHICLE CLASS",c.vehClass)}${kv("NCD",c.ncd!==""&&c.ncd!=null?String(c.ncd).replace(/%?$/,"%"):"")}${kv("MFG YEAR",c.mfgYear)}${kv("PERIOD OF COVERAGE", c.periodFrom||c.periodTo ? `${dmy(c.periodFrom)} - ${dmy(c.periodTo)}` : "")}
+      </table></td><td style="border:0;padding:0;vertical-align:top;">
+      <table><tr><td class="bar" colspan="2">PREVIOUS INSURANCE</td></tr>
+        ${kv("INSURER",c.prev.insurer)}${kv("BROKER",c.prev.broker)}<tr><td class="lbl">AMT SUM INSURED</td><td>${icFmt(c.prev.sumInsured)}</td></tr><tr><td class="lbl">AMT PAYABLE</td><td><b>${icFmt(c.prev.payable)}</b></td></tr>
+      </table></td></tr></table>
+    <div class="gap"></div>
+    <table><tr><td class="bar" colspan="${n+1}">BENCHMARKING COMPARISON</td></tr>
+      <tr><th class="bar c" rowspan="2" style="width:24%;">DESCRIPTION</th>${groups.map(g=>`<th class="bar c" colspan="${g.n}">${e(g.b)}</th>`).join("")}</tr><tr></tr>
+      <tr><td>Insurance Company</td>${Q.map((q,k)=>`<td class="c${k===sel?" sel":""}">${e(q.insurer)}</td>`).join("")}</tr>
+      <tr><td>Plan Name</td>${Q.map((q,k)=>`<td class="c${k===sel?" sel":""}">${e(q.plan ? q.plan.charAt(0)+q.plan.slice(1).toLowerCase() : "")}</td>`).join("")}</tr>
+      ${numRow("Sum Assured (RM)","sumAssured")}${numRow("Windscreen Coverage","windscreen")}${numRow("Excess","excess")}
+    </table>
+    <div class="gap"></div>
+    <table><tr><td class="bar" colspan="${n+1}">BENEFITS / PREMIUM (RM)</td></tr>
+      <tr><th class="bar c" style="width:24%;">Description</th>${Q.map(q=>`<th class="c" style="font-weight:400;">${e(q.insurer)}</th>`).join("")}</tr>
+      ${numRow("All Drivers","allDrivers")}<tr><td>Waiver of Betterment</td>${Q.map(q=>`<td>${e(q.waiver||"")}</td>`).join("")}</tr>
+      ${numRow("Windscreen Coverage","windscreenPrem")}${numRow("Unlimited Towing","towing")}${numRow("Personal Accident","pa")}${numRow("Special Peril including Flood","flood")}
+      ${calcRow("Total Additional Cover","benefit",' class="tot"')}
+    </table>
+    <div class="gap"></div>
+    <table><tr><td class="bar" colspan="${n+1}">PREMIUM DETAILS</td></tr>
+      ${numRow("Basic Premium (RM)","basic")}${numRow("NCB (RM)","ncb")}${calcRow("Additional Cover (RM)","addCover")}
+      ${calcRow("Gross Premium (RM)","gross",' class="tot"')}${calcRow(`Service Tax (${icNum(c.taxRate)!=null?c.taxRate:8}%) (RM)`,"tax")}${calcRow("Stamp Duty (RM)","stamp")}
+      <tr class="tot"><th style="text-align:left;width:24%;">Total (RM)</th>${calc.map((r,k)=>`<th${cls(k)}>${icFmt(r.total)}</th>`).join("")}</tr>
+    </table></div>`;
+  w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Insurance Comparison — ${e(c.plate)} — ${monthName}</title><style>${IC_PRINT_CSS}</style></head><body>${html}<script>window.onload=function(){window.print();}<\/script></body></html>`);
+  w.document.close();
+}
+function printInsMonthlySummary(){
+  const ym = icMonthVal();
+  const rows = insComparisons.filter(c=>c.month===ym);
+  if(!rows.length){ A(fleetI18n.tr("No comparisons for this month yet — select a vehicle and click + New comparison.")); return; }
+  const w = window.open("", "_blank"); if(!w){ A(fleetI18n.tr("Please allow pop-ups to print the report.")); return; }
+  const e = x => escHtml(x==null?"":String(x));
+  // columns: every broker → insurer pair used this month, in first-seen order
+  const cols = []; rows.forEach(c=>c.quotes.forEach(q=>{ const b=(q.broker||"").trim()||"—", i=(q.insurer||"").trim()||"—"; if(!cols.some(x=>x.b===b&&x.i===i)) cols.push({b,i}); }));
+  const brokers = [...new Set(cols.map(x=>x.b))]; const ordered = brokers.flatMap(b=>cols.filter(x=>x.b===b));
+  const short = dmy => { const iso = dmyToIso(dmy); if(!iso) return ""; const [y,m,d] = iso.split("-"); return `${+d}-${["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][+m-1]}`; };
+  const [y,m] = ym.split("-");
+  const body = rows.map((c,n)=>{ const d = complianceData.find(x=>x.id===c.vehicleId) || {}; const best = icBest(c);
+    return `<tr><td class="c">${n+1}</td><td class="c">${e(c.plate)}</td><td class="c">${e(d.company||c.owner)}</td><td class="c">${e(short(d.roadTax))}</td><td class="c">${e(short(d.insurance))}</td>
+      ${ordered.map(col=>{ const k = c.quotes.findIndex(q=>((q.broker||"").trim()||"—")===col.b && ((q.insurer||"").trim()||"—")===col.i); if(k<0) return "<td></td>"; const t = icCalc(c.quotes[k], c.taxRate).total; return `<td class="r${k===best?" green":""}">${t?icFmt(t):""}</td>`; }).join("")}</tr>`; }).join("");
+  const html = `<div class="page land"><h1 style="margin-bottom:8px;">INSURAN ${IC_MONTHS_MS[+m-1]} ${y}</h1>
+    <table><tr><th rowspan="2">NO</th><th rowspan="2">NO.<br>KENDERAAN</th><th rowspan="2">SYARIKAT</th><th rowspan="2">TARIKH<br>TAMAT<br>ROADTAX</th><th rowspan="2">TARIKH<br>TAMAT<br>INSURAN</th>
+      ${brokers.map(b=>`<th colspan="${ordered.filter(x=>x.b===b).length}">${e(b)}</th>`).join("")}</tr>
+      <tr>${ordered.map(x=>`<th>${e(x.i)}</th>`).join("")}</tr>${body}</table>
+    <div style="margin-top:8px;font-size:10px;"><span class="green" style="display:inline-block;width:18px;height:10px;border:1px solid #000;vertical-align:middle;"></span> Dipilih / harga terendah</div></div>`;
+  w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Insuran ${IC_MONTHS_MS[+m-1]} ${y}</title><style>${IC_PRINT_CSS.replace("@page{size:A4 portrait;margin:0;}","@page{size:A4 landscape;margin:0;}")} th{background:#fff;font-size:10px;}</style></head><body>${html}<script>window.onload=function(){window.print();}<\/script></body></html>`);
+  w.document.close();
+}
+
 async function uploadInsurancePdf(id, input){
   if(currentRole!=="admin") return;
   const rec = complianceData.find(d=>d.id===id), file = input.files && input.files[0];
@@ -6497,7 +6693,7 @@ function printComplianceCalendar(){
   await loadHolidays();
   await loadDisposePipeline();
   await importPurchaseInbox();
-  if(currentRole==="admin") await loadInsuranceDocs();
+  if(currentRole==="admin") await loadInsComparisons();
   await loadTickets();
   await loadHiringRecords();
   await loadDailyMovements();
