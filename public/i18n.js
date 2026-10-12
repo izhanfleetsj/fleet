@@ -782,7 +782,7 @@
   ];
 
   const TEMPLATES = [
-    ["Showing {a} job(s) — last 7 days and jobs still waiting","Paparan {a} job — 7 hari lepas dan job yang masih menunggu"],
+    ["Showing {a} job(s) — yesterday, today and upcoming","Paparan {a} job — semalam, hari ini dan akan datang"],
     ["Cancel this job?\n\n{a} — {b}\n{c} {d}\n\nReason (optional):","Batalkan job ini?\n\n{a} — {b}\n{c} {d}\n\nSebab (pilihan):"],
     ["Request sent — {a}. The printed form needs the head of department's signature.","Permohonan dihantar — {a}. Borang yang dicetak perlu ditandatangan oleh ketua jabatan."],
     ["In progress + delivered · purchases {a}","Dalam proses + diterima · pembelian {a}"],

@@ -4220,11 +4220,11 @@ function renderReqStatus(){
   const bSel = document.getElementById("rs_branch");
   if(!bSel.options.length) bSel.innerHTML = `<option value="">${escHtml(fleetI18n.tr("All branches"))}</option>` + BRANCH_CODES.map(b=>`<option value="${b}">${b}</option>`).join("");
   const br = bSel.value, q = document.getElementById("rs_search").value.trim().toUpperCase();
-  const since = new Date(APP_TODAY_ISO); since.setDate(since.getDate()-7);
+  const since = new Date(APP_TODAY_ISO); since.setDate(since.getDate()-1);   // yesterday onward (yesterday, today, upcoming)
   const sinceIso = since.toISOString().slice(0,10);
   const rows = hiringRecords.filter(h=>{
     const iso = dmyToIso(h.tarikh);
-    if(iso && iso < sinceIso && h.status!=="New") return false;     // recent jobs + anything still waiting
+    if(!iso || iso < sinceIso) return false;
     if(br && h.branch!==br) return false;
     if(q && ![h.sv,h.project,h.tempat,h.company,h.item,h.unit,h.phone].join(" ").toUpperCase().includes(q)) return false;
     return true;
@@ -4242,7 +4242,7 @@ function renderReqStatus(){
       <td class="mono-cell">${escHtml(h.branch||"—")}</td><td class="mono-cell">${escHtml(h.tarikh)}${h.masa && h.masa!=="—" ? "<br>"+escHtml(h.masa) : ""}</td>
       <td>${escHtml(String(h.tempat||"").replace(/https?:\/\/\S+/g,"").trim()||"—")}</td><td>${escHtml(sv)}</td><td>${status}</td><td>${act}</td></tr>`;
   }).join("") || `<tr><td colspan="8" style="color:var(--faint);text-align:center;padding:16px;">${escHtml(fleetI18n.tr("No job requests"))}</td></tr>`;
-  document.getElementById("rsCount").textContent = fleetI18n.tr(`Showing ${rows.length} job(s) — last 7 days and jobs still waiting`);
+  document.getElementById("rsCount").textContent = fleetI18n.tr(`Showing ${rows.length} job(s) — yesterday, today and upcoming`);
 }
 async function cancelJobRequest(i){
   const h0 = hiringRecords[i]; if(!h0) return;
