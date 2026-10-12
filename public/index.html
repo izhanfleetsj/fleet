@@ -2584,9 +2584,11 @@ function icBest(c){
   if(c.selected!=null && c.quotes[c.selected]) return c.selected;
   return totals.length ? totals.sort((a,b)=>a.t-b.t)[0].k : null;
 }
-/* Earliest road tax expiry first (then insurance expiry, then plate). */
+/* Earliest road tax expiry first (then insurance expiry, then plate). Ordered by day & month
+   only, as printed ("7-Oct"): a date already renewed to next year still sorts by its day. */
 function icSortByRoadtax(list){
-  const key = c => { const d = complianceData.find(x=>x.id===c.vehicleId) || {}; return [dmyToIso(d.roadTax)||"9999", dmyToIso(d.insurance)||"9999", String(c.plate)]; };
+  const md = dmy => (dmyToIso(dmy)||"").slice(5) || "99-99";
+  const key = c => { const d = complianceData.find(x=>x.id===c.vehicleId) || {}; return [md(d.roadTax), md(d.insurance), String(c.plate)]; };
   return list.slice().sort((a,b)=>{ const x = key(a), y = key(b); return x[0].localeCompare(y[0]) || x[1].localeCompare(y[1]) || x[2].localeCompare(y[2]); });
 }
 function renderInsComparisons(){
