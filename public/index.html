@@ -4140,7 +4140,7 @@ function renderHirePo(){
   const w = document.getElementById("hr_poWrap"); if(!w) return;
   w.innerHTML = hrPoFile
     ? `${poLinkHtml(hrPoFile)} <span style="font-size:11.5px;color:var(--ink-soft);">${escHtml(hrPoFile.name||"")}</span> <button type="button" class="btn ghost" style="padding:2px 8px;font-size:10.5px;color:var(--danger);" onclick="hrPoFile=null;renderHirePo()">✕</button>`
-    : `<label class="btn ghost" style="cursor:pointer;">📎 <span>${escHtml(fleetI18n.tr("Upload PO (PDF / photo)"))}</span><input type="file" accept="application/pdf,image/*" style="display:none" onchange="uploadHirePo(this.files[0]); this.value='';"></label><span id="hr_poMsg" style="font-size:11px;color:var(--ink-soft);"></span>`;
+    : `<label class="btn ghost" style="cursor:pointer;">📎 <span>${escHtml(fleetI18n.tr("Upload (PDF / Photo)"))}</span><input type="file" accept="application/pdf,image/*" style="display:none" onchange="uploadHirePo(this.files[0]); this.value='';"></label><span id="hr_poMsg" style="font-size:11px;color:var(--ink-soft);"></span>`;
 }
 async function uploadHirePo(file){
   if(!file) return;
