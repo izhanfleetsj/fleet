@@ -510,6 +510,7 @@
     ["Record Status","Status Rekod"],
     ["Totals (shown)","Jumlah (dipaparkan)"],
     ["Period","Tempoh"],
+    ["Prev. Year Amount Payable (RM)","Jumlah Dibayar Tahun Lepas (RM)"],
     ["vehicle not in register","kenderaan tiada dalam daftar"],
     ["No ★ selected yet","Belum ada ★ dipilih"],
     ["Different from the ★ quote","Berbeza dengan sebut harga ★"],

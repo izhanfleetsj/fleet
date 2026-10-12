@@ -2947,7 +2947,7 @@ const IDB_INPUTS = [   // [key, label, type]
   ["makeModel","Make & Model","text"], ["sumInsured","Sum Insured (RM)","num"], ["addCoverText","Additional Coverage","text"],
   ["addCoverRm","Additional Coverage (RM)","num"], ["ageLoading","Vehicle Age Loading (RM)","num"], ["perils","Special Perils (RM)","num"],
   ["ncd","NCD (%)","num"], ["basic","Basic Premium (RM)","num"], ["rebate","Rebate (RM)","num"], ["stamp","Stamp Duty (RM)","num"], ["excess","Excess (RM)","num"],
-  ["hpOwner","Hire Purchase Owners","text"], ["drivers","Authorised Drivers","text"], ["remarks","Remarks","text"],
+  ["prevPayable","Prev. Year Amount Payable (RM)","num"], ["hpOwner","Hire Purchase Owners","text"], ["drivers","Authorised Drivers","text"], ["remarks","Remarks","text"],
 ];
 const idbN = v => v==null || v==="" || isNaN(Number(v)) ? 0 : Number(v);
 const r2 = x => Math.round(x*100)/100;
@@ -2965,7 +2965,8 @@ function idbCalc(r){
   // previous year: the same vehicle's latest record from an earlier policy year
   const prev = insuranceDb.filter(x=>x!==r && utilPlateKey(idbVehicle(x).plate || x.plate)===utilPlateKey(plate) && Number(x.policyYear) < Number(r.policyYear))
     .sort((a,b)=>Number(b.policyYear)-Number(a.policyYear))[0];
-  const prevEx = prev ? idbCalcBasic(prev).exSd : null;
+  // no earlier record here → the previous insurance on the comparison ("Amt Payable", stamp duty taken off)
+  const prevEx = prev ? idbCalcBasic(prev).exSd : (idbN(r.prevPayable) ? r2(idbN(r.prevPayable) - stamp) : null);
   const change = prevEx!=null ? r2(exSd - prevEx) : null;
   const changePct = prevEx ? change / prevEx * 100 : null;
   const verdict = prevEx==null ? "New / no prior-year record" : change < 0 ? "Saving" : change > 0 ? "Increase" : "No change";
@@ -3052,7 +3053,7 @@ function openInsDbForm(id){
     <div style="font-weight:700;font-size:12.5px;margin-bottom:8px;">${escHtml(fleetI18n.tr(r ? "Edit record" : "New record"))}</div>
     <div class="form-row" style="grid-template-columns:repeat(4,1fr);">${IDB_INPUTS.slice(0,8).map(field).join("")}</div>
     <div class="form-row" style="grid-template-columns:repeat(4,1fr);">${IDB_INPUTS.slice(8,16).map(field).join("")}</div>
-    <div class="form-row" style="grid-template-columns:1fr 1fr 2fr 3fr 3fr;">${IDB_INPUTS.slice(16).map(field).join("")}</div>
+    <div class="form-row" style="grid-template-columns:1fr 1fr 1.4fr 2fr 3fr 3fr;">${IDB_INPUTS.slice(16).map(field).join("")}</div>
     <div id="idbPreview" style="font-size:12px;margin:6px 0;"></div>
     <div class="form-actions"><button type="button" class="btn ghost" onclick="document.getElementById('idbForm').style.display='none'">${escHtml(fleetI18n.tr("Cancel"))}</button>
       <button type="button" class="btn yellow" onclick="saveInsDbRecord()">💾 ${escHtml(fleetI18n.tr("Save"))}</button></div></div>`;
@@ -3094,6 +3095,7 @@ function idbFromComparison(d){
   if(c.periodTo) o.end = c.periodTo;
   if(c.makeModel) o.makeModel = c.makeModel;
   if(c.mfgYear) o.yearMade = c.mfgYear;
+  if(icNum(c.prev && c.prev.payable)) o.prevPayable = icNum(c.prev.payable);
   return o;
 }
 function idbFillFromRegister(d){
@@ -3164,6 +3166,7 @@ async function upsertInsDbFromComparison(c, q, opts={}){
     addCoverRm: t.addCover, ageLoading: r.ageLoading || "", perils: "", ncd: idbN(String(c.ncd||"").replace(/[%\s]/g,"")), basic: icNum(q.basic) ?? r.basic,
     stamp: t.stamp, taxRate: icNum(c.taxRate) ?? 8, excess: icNum(q.excess) ?? r.excess ?? "", remarks: r.remarks || `${q.broker||""} · ${fleetI18n.tr("from comparison")}`.trim() });
   r.rebate = t.rebate || "";   // kept separately so the totals match the comparison
+  if(icNum(c.prev && c.prev.payable)) r.prevPayable = icNum(c.prev.payable);   // previous insurance → "Change vs Prev. Year"
   if(opts.noSave) return;
   await persistInsuranceDb(); renderInsuranceDb();
 }
