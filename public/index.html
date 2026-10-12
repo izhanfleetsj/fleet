@@ -1004,6 +1004,7 @@ body:not(.is-admin) .admin-only{display:none !important;}
           <div class="panel-head">
             <h3>Vehicle's Insurance Database — All Policy Years</h3>
             <span class="sub" style="font-size:11px;color:var(--ink-soft);margin-left:auto;">One record per vehicle per policy year · premium comparison = Gross Premium + Service Tax (stamp duty excluded)</span>
+            <button type="button" class="btn ghost" onclick="importInsDbFromRegister()" title="Create records from the Insurance Register below">⇩ <span>From Insurance Register</span></button>
             <button type="button" class="btn ghost" onclick="exportInsuranceDb()">⬇ <span>Export Excel</span></button>
             <button type="button" class="btn yellow" onclick="openInsDbForm()">+ <span>Add record</span></button>
           </div>
@@ -3016,11 +3017,46 @@ function openInsDbForm(id){
       <button type="button" class="btn yellow" onclick="saveInsDbRecord()">💾 ${escHtml(fleetI18n.tr("Save"))}</button></div></div>`;
   f.style.display = "block";
   // vehicle picked → fill make/model & year from the register when empty; auto policy year from start date
-  document.getElementById("idb_vehicleId").addEventListener("change", e=>{ const d = complianceData.find(x=>String(x.id)===e.target.value); if(d){ const mm = document.getElementById("idb_makeModel"); if(!mm.value) mm.value = d.category||""; const op = document.getElementById("idb_operator"); if(!op.value && d.insurer) op.value = d.insurer; } idbPreview(); });
+  document.getElementById("idb_vehicleId").addEventListener("change", e=>{ const d = complianceData.find(x=>String(x.id)===e.target.value); if(d) idbFillFromRegister(d); idbPreview(); });
   document.getElementById("idb_start").addEventListener("change", e=>{ if(e.target.value){ document.getElementById("idb_policyYear").value = e.target.value.slice(0,4); const en = document.getElementById("idb_end"); if(!en.value){ const t = new Date(e.target.value); t.setFullYear(t.getFullYear()+1); t.setDate(t.getDate()-1); en.value = t.toISOString().slice(0,10); } } idbPreview(); });
   f.querySelectorAll("input,select").forEach(el=>el.addEventListener("input", idbPreview));
   idbPreview();
   f.scrollIntoView({behavior:"smooth", block:"start"});
+}
+/* Vehicle picked → take what the Insurance Register already has (empty boxes only). */
+function idbFromRegister(d){
+  const o = {};
+  if(d.insurer) o.operator = String(d.insurer).toUpperCase();
+  const st = dmyToIso(d.insStart), en = dmyToIso(d.insurance);
+  if(st) o.start = st;
+  if(en) o.end = en;
+  if(!st && en){ const f = new Date(en); f.setFullYear(f.getFullYear()-1); f.setDate(f.getDate()+1); o.start = f.toISOString().slice(0,10); }
+  if(o.start) o.policyYear = o.start.slice(0,4);
+  if(d.insCover) o.cover = d.insCover;
+  if(Number(d.insSumInsured)) o.sumInsured = Number(d.insSumInsured);
+  if(d.category) o.makeModel = String(d.category).toUpperCase();
+  if(d.insurancePolicy) o.remarks = `POLICY NO. ${d.insurancePolicy}`.toUpperCase();
+  return o;
+}
+function idbFillFromRegister(d){
+  const o = idbFromRegister(d);
+  Object.entries(o).forEach(([k,v])=>{ const el = document.getElementById("idb_"+k); if(!el) return; if(k==="policyYear" || k==="cover" || !el.value.trim()) el.value = v; });
+}
+/* Create this year's record for every vehicle in the Insurance Register that has insurance
+   details, skipping vehicles that already have a record for that policy year. */
+async function importInsDbFromRegister(){
+  const made = [];
+  complianceData.forEach(d=>{
+    if(!d.insurer && !d.insStart && !Number(d.insSumInsured)) return;
+    const o = idbFromRegister(d);
+    const year = o.policyYear || APP_TODAY_ISO.slice(0,4);
+    if(insuranceDb.some(x=>x.vehicleId===d.id && String(x.policyYear)===String(year))) return;
+    made.push({ id: "idb" + Date.now().toString(36) + Math.random().toString(36).slice(2,6), vehicleId: d.id, plate: d.plate, taxRate: 8, stamp: 10, ncd: "", cover: "Comprehensive", ...o, policyYear: year });
+  });
+  if(!made.length){ A(fleetI18n.tr("Nothing new to import — every vehicle with insurance details already has a record for its policy year.")); return; }
+  if(!confirm(fleetI18n.tr(`Create ${made.length} record(s) from the Insurance Register? NCD and Basic Contribution still need to be filled in.`))) return;
+  insuranceDb.push(...made);
+  await persistInsuranceDb(); renderInsuranceDb();
 }
 function idbReadForm(){
   const o = {};

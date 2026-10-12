@@ -510,6 +510,8 @@
     ["Record Status","Status Rekod"],
     ["Totals (shown)","Jumlah (dipaparkan)"],
     ["Period","Tempoh"],
+    ["From Insurance Register","Dari Daftar Insurans"],
+    ["Nothing new to import — every vehicle with insurance details already has a record for its policy year.","Tiada rekod baharu — setiap kenderaan yang ada butiran insurans sudah ada rekod untuk tahun polisinya."],
     ["excl. SD","tanpa DS"],
     ["Saving","Jimat"],
     ["Increase","Naik"],
@@ -901,6 +903,7 @@
   ];
 
   const TEMPLATES = [
+    ["Create {a} record(s) from the Insurance Register? NCD and Basic Contribution still need to be filled in.","Cipta {a} rekod dari Daftar Insurans? NCD dan Caruman Asas masih perlu diisi."],
     ["Showing {a} of {b} records","Paparan {a} daripada {b} rekod"],
     ["Replace the existing comparison for {a} with the PDF?","Ganti perbandingan sedia ada untuk {a} dengan PDF ini?"],
     ["Delete {a}?","Padam {a}?"],
