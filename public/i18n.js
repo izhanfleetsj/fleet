@@ -423,6 +423,8 @@
     ["Disposal requested + approved","Pelupusan dimohon + diluluskan"],
     ["New vehicles minus disposed","Kenderaan baharu tolak yang dilupus"],
     ["Stage","Peringkat"],
+    ["Purchase Order (PO) — if the job needs one, e.g. collecting premix","Purchase Order (PO) — jika job memerlukan PO, cth. ambil premix"],
+    ["Upload PO (PDF / photo)","Muat naik PO (PDF / gambar)"],
     ["My Job Requests — Status","Status Job Request Saya"],
     ["View only — see whether your job has been assigned","Paparan sahaja — semak sama ada job anda sudah di-assign"],
     ["Search supervisor / project / location","Cari penyelia / projek / lokasi"],

@@ -794,6 +794,11 @@ body:not(.is-admin) .admin-only{display:none !important;}
             <div><label>Sv (nama, di tapak)</label><input id="hr_sv" placeholder="e.g. ABC"></div>
             <div><label>No. Telefon Sv</label><input id="hr_phone" placeholder="e.g. 1234"></div>
           </div>
+          <div class="form-row" style="grid-template-columns:1fr;">
+            <div><label>Purchase Order (PO) — if the job needs one, e.g. collecting premix</label>
+              <div id="hr_poWrap" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;"></div>
+            </div>
+          </div>
           <div class="form-actions">
             <button class="btn ghost" onclick="clearHireForm()">Clear</button>
             <button class="btn yellow" onclick="logHireRequest()">Log Request</button>
@@ -3993,7 +3998,7 @@ function renderHireTable(){
     const actionCell = h.status==="New" ? `<button class="btn yellow" style="padding:5px 11px;font-size:11.5px;" onclick="openAssignPanel(${i})">${T("Balas / Assign")}</button>` : `<button class="btn ghost" style="padding:5px 11px;font-size:11.5px;" onclick="openAssignPanel(${i})">${T("Edit")}</button>`;
     const deleteBtn = currentRole==="admin" ? `<button class="btn ghost" style="padding:5px 9px;font-size:10.5px;color:var(--danger);margin-left:6px;" onclick="deleteHireRecord(${i})" title="${T("Padam job ini (cth. job dibatalkan)")}">✕ ${T("Padam")}</button>` : "";
     const qty = h.qty || (String(h.unit||"").match(/^\s*(\d+)\b/)||[])[1] || 1;
-    return `<tr><td style="font-weight:600;">${escHtml(h.item || h.unit)}</td><td class="mono-cell" style="text-align:center;">${qty}</td><td>${escHtml(h.company)}<br><span style="font-size:11px;color:var(--ink-soft);">${escHtml(h.project)}</span></td>
+    return `<tr><td style="font-weight:600;">${escHtml(h.item || h.unit)}</td><td class="mono-cell" style="text-align:center;">${qty}</td><td>${escHtml(h.company)}<br><span style="font-size:11px;color:var(--ink-soft);">${escHtml(h.project)}</span>${h.poFile?`<br>${poLinkHtml(h.poFile)}`:""}</td>
     <td class="mono-cell">${escHtml(h.branch||"—")}</td>
     <td class="mono-cell">${h.tarikh} ${h.masa && h.masa!=="—"?"· "+h.masa:""}</td><td class="loc-cell">${locationHtml(h.tempat)}</td><td>${escHtml(svLine)}</td>
     <td>${vehCell}</td><td>${badge(h.status,cls)}${h.status==="Cancelled" && h.cancelReason ? `<div style="font-size:10.5px;color:var(--danger);margin-top:3px;">${escHtml(h.cancelReason)}</div>` : ""}</td><td style="white-space:nowrap;">${actionCell}${deleteBtn}</td></tr>`;
@@ -4126,9 +4131,39 @@ document.addEventListener("DOMContentLoaded", ()=>{
   if(ta) ta.addEventListener("paste", ()=>setTimeout(applyWaPaste, 0));   // fill immediately on paste
 });
 
+/* ---- Purchase order (PO) attached to a job request. Uploaded by the requester (no login),
+   shown to admin, and sent to the assigned driver as a link in the WhatsApp job message. ---- */
+let hrPoFile = null;
+const poUrl = f => f ? `${location.origin}/api/files/${encodeURIComponent(f.id)}` : "";
+function poLinkHtml(f){ return f ? `<a class="map-link" href="/api/files/${encodeURIComponent(f.id)}" target="_blank" rel="noopener">📄 PO</a>` : ""; }
+function renderHirePo(){
+  const w = document.getElementById("hr_poWrap"); if(!w) return;
+  w.innerHTML = hrPoFile
+    ? `${poLinkHtml(hrPoFile)} <span style="font-size:11.5px;color:var(--ink-soft);">${escHtml(hrPoFile.name||"")}</span> <button type="button" class="btn ghost" style="padding:2px 8px;font-size:10.5px;color:var(--danger);" onclick="hrPoFile=null;renderHirePo()">✕</button>`
+    : `<label class="btn ghost" style="cursor:pointer;">📎 <span>${escHtml(fleetI18n.tr("Upload PO (PDF / photo)"))}</span><input type="file" accept="application/pdf,image/*" style="display:none" onchange="uploadHirePo(this.files[0]); this.value='';"></label><span id="hr_poMsg" style="font-size:11px;color:var(--ink-soft);"></span>`;
+}
+async function uploadHirePo(file){
+  if(!file) return;
+  const msg = document.getElementById("hr_poMsg");
+  try{
+    try{ file = await prShrinkImage(file); }catch(e){}
+    const type = file.type==="application/pdf" ? "application/pdf" : /png/.test(file.type) ? "image/png" : /webp/.test(file.type) ? "image/webp" : /jpe?g/.test(file.type) ? "image/jpeg" : "";
+    if(!type) throw new Error(fleetI18n.tr("Only PDF or image files (JPG / PNG) are accepted."));
+    if(file.size > 4*1024*1024) throw new Error(fleetI18n.tr("File is too large (max 4 MB). Please reduce the file size and try again."));
+    const rnd = Array.from(crypto.getRandomValues(new Uint8Array(16)), b=>(b%36).toString(36)).join("") + Date.now().toString(36);
+    const id = `po-${rnd.slice(0,28)}${{"application/pdf":".pdf","image/png":".png","image/webp":".webp","image/jpeg":".jpg"}[type]}`;
+    if(msg) msg.textContent = fleetI18n.tr("Uploading…");
+    const r = await fetch("/api/files/" + encodeURIComponent(id), { method:"PUT", credentials:"same-origin",
+      headers:{ "Content-Type":type, "X-Requested-With":"fleet-app" }, body:file });
+    if(!r.ok){ let m = "HTTP " + r.status; try{ m = (await r.json()).error || m; }catch(e){} throw new Error(m); }
+    hrPoFile = { id, type, name:file.name };
+    renderHirePo();
+  }catch(err){ if(msg) msg.textContent = ""; A(err.message); }
+}
 function clearHireForm(){
   ["hr_item","hr_branch","hr_company","hr_company_other","hr_tarikh","hr_masa","hr_project","hr_tempat","hr_load","hr_sv","hr_phone"].forEach(id=>document.getElementById(id).value="");
   document.getElementById("hr_qty").value = 1;
+  hrPoFile = null; renderHirePo();
   document.getElementById("hr_company_other").style.display = "none";
   const st = document.getElementById("hr_locStatus"); if(st) st.textContent = "";
   const wt = document.getElementById("waPasteText"); if(wt) wt.value = "";
@@ -4187,6 +4222,7 @@ async function logHireRequest(){
   const phone = document.getElementById("hr_phone").value.trim() || "—";
 
   const rec = {unit,item,qty,branch,company,project,tarikh,masa,tempat,load,sv,phone,status:"New",source:null,assignedVehicle:null,driverName:null,driverPhone:null};
+  if(hrPoFile) rec.poFile = hrPoFile;
   normalizeHireRecord(rec);
   hiringRecords.unshift(rec);
   renderHireTable();
@@ -4238,7 +4274,7 @@ function renderReqStatus(){
     else status = badge(fleetI18n.tr("Waiting to be assigned"),"warn");
     const sv = !h.sv || h.sv==="—" ? "—" : h.sv + (h.phone && h.phone!=="—" ? ` (${h.phone})` : "");
     const act = h.status==="Cancelled" ? "" : `<button type="button" class="btn ghost" style="padding:4px 9px;font-size:11px;color:var(--danger);white-space:nowrap;" onclick="cancelJobRequest(${i})">✕ <span>${escHtml(fleetI18n.tr("Cancel Job"))}</span></button>`;
-    return `<tr${h.status==="Cancelled"?' style="opacity:.6;"':""}><td style="font-weight:600;">${escHtml(h.unit || h.item)}</td><td>${escHtml(h.company)}<br><span style="font-size:11px;color:var(--ink-soft);">${escHtml(h.project)}</span></td>
+    return `<tr${h.status==="Cancelled"?' style="opacity:.6;"':""}><td style="font-weight:600;">${escHtml(h.unit || h.item)}</td><td>${escHtml(h.company)}<br><span style="font-size:11px;color:var(--ink-soft);">${escHtml(h.project)}</span>${h.poFile?`<br>${poLinkHtml(h.poFile)}`:""}</td>
       <td class="mono-cell">${escHtml(h.branch||"—")}</td><td class="mono-cell">${escHtml(h.tarikh)}${h.masa && h.masa!=="—" ? "<br>"+escHtml(h.masa) : ""}</td>
       <td>${escHtml(String(h.tempat||"").replace(/https?:\/\/\S+/g,"").trim()||"—")}</td><td>${escHtml(sv)}</td><td>${status}</td><td>${act}</td></tr>`;
   }).join("") || `<tr><td colspan="8" style="color:var(--faint);text-align:center;padding:16px;">${escHtml(fleetI18n.tr("No job requests"))}</td></tr>`;
@@ -4536,7 +4572,7 @@ Company : ${h.company}
 Project: ${h.project || "—"}
 Tempat : ${h.tempat || "—"}
 ${vehLines}
-Sv tapak : ${h.sv}${h.phone && h.phone!=="—" ? " ("+h.phone+")" : ""}`;
+Sv tapak : ${h.sv}${h.phone && h.phone!=="—" ? " ("+h.phone+")" : ""}${h.poFile ? `\nPO : ${poUrl(h.poFile)}` : ""}`;
 
   document.getElementById("hireReplyText").value = text;
   renderHireDriverButtons(h);
@@ -4571,7 +4607,7 @@ Project : ${h.project || "—"}
 Tempat : ${h.tempat || "—"}
 Load : ${h.load || "—"}
 Kenderaan : ${a.vehicle}
-Sv tapak : ${h.sv}${h.phone && h.phone!=="—" ? " ("+h.phone+")" : ""}`;
+Sv tapak : ${h.sv}${h.phone && h.phone!=="—" ? " ("+h.phone+")" : ""}${h.poFile ? `\n\n*PO (sila bawa / tunjuk)* : ${poUrl(h.poFile)}` : ""}`;
 }
 function renderHireDriverButtons(h){
   const wrap = document.getElementById("hireDriverWaBtns");
@@ -6361,6 +6397,7 @@ function printComplianceCalendar(){
   }catch(e){ console.info("Session check failed:", e); }
   populateLoginBranches();
   populateBranchDropdowns();
+  renderHirePo();
   setSyncStatus("Menarik data terkini…");
   await loadComplianceRegister();
   await loadCostingData();
