@@ -2500,7 +2500,7 @@ const IC_ROWS = [   // [key, label, type, section]
   ["sumAssured","Sum Assured (RM)","num","bench"], ["windscreen","Windscreen Coverage","num","bench"], ["excess","Excess","num","bench"],
   ["allDrivers","All Drivers","num","ben"], ["waiver","Waiver of Betterment","yn","ben"], ["windscreenPrem","Windscreen Coverage","num","ben"],
   ["towing","Unlimited Towing","num","ben"], ["pa","Personal Accident","num","ben"], ["flood","Special Peril including Flood","num","ben"],
-  ["basic","Basic Premium (RM)","num","prem"], ["ncb","NCB (RM)","calc","prem"], ["addCover","Additional Cover (RM)","num","prem"], ["stamp","Stamp Duty (RM)","num","prem"],
+  ["basic","Basic Premium (RM)","num","prem"], ["ncb","NCB (RM)","calc","prem"], ["addCover","Additional Cover (RM)","calc","prem"], ["stamp","Stamp Duty (RM)","num","prem"],
 ];
 const icNum = v => v==null || v==="" || isNaN(Number(v)) ? null : Number(v);
 function icCalc(q, taxRate, ncd){
@@ -2508,7 +2508,7 @@ function icCalc(q, taxRate, ncd){
   const ncdPct = icNum(String(ncd==null?"":ncd).replace(/[%\s]/g,"")) || 0;
   const ncb = icNum(q.basic)!=null ? Math.round(icNum(q.basic) * ncdPct) / 100 : null;
   const benefit = ["allDrivers","windscreenPrem","towing","pa","flood"].reduce((t,k)=>t+(icNum(q[k])||0),0);
-  const addCover = icNum(q.addCover)!=null ? icNum(q.addCover) : benefit;
+  const addCover = benefit;   // always the sum of the benefits above (not keyed in)
   const gross = (icNum(q.basic)||0) - (ncb||0) + addCover;
   const tax = Math.round(gross * (icNum(taxRate)!=null ? icNum(taxRate) : 8)) / 100;
   const stamp = icNum(q.stamp)!=null ? icNum(q.stamp) : 10;
@@ -2580,7 +2580,7 @@ function editInsComparison(id){
   const qRows = IC_ROWS.map(([k,label,type,s])=>{
     let head = "";
     if(s!==lastSec){ head = `<tr class="ic-sec"><td colspan="${c.quotes.length+1}">${escHtml(fleetI18n.tr(sec[s]))}</td></tr>`; lastSec = s; }
-    if(type==="calc") return head + `<tr class="ic-lock"><th>${escHtml(fleetI18n.tr(label))} <span title="${escHtml(fleetI18n.tr("Auto: Basic Premium × NCD %"))}">🔒</span></th>${c.quotes.map((q,n)=>`<td class="ic-calc" data-calc="${n}.${k}"></td>`).join("")}</tr>`;
+    if(type==="calc") return head + `<tr class="ic-lock"><th>${escHtml(fleetI18n.tr(label))}</th>${c.quotes.map((q,n)=>`<td class="ic-calc" data-calc="${n}.${k}"></td>`).join("")}</tr>`;
     const cells = c.quotes.map((q,n)=> type==="yn"
       ? `<td><select data-ic="q.${n}.${k}"><option ${q[k]!=="NO"?"selected":""}>YES</option><option ${q[k]==="NO"?"selected":""}>NO</option></select></td>`
       : `<td>${inp(`q.${n}.${k}`, q[k], type==="num" ? `inputmode="decimal" class="ic-num" placeholder="${k==="addCover"?escHtml(fleetI18n.tr("auto")):k==="stamp"?"10":"-"}"` : `class="dsp-up"`)}</td>`).join("");
@@ -2640,7 +2640,7 @@ function icRefreshCalc(){
   const best = icBest(c);
   c.quotes.forEach((q,n)=>{
     const r = icCalc(q, c.taxRate, c.ncd);
-    ["ncb","benefit","gross","tax","total"].forEach(k=>{ const el = document.querySelector(`[data-calc="${n}.${k}"]`); if(el){ el.textContent = icFmt(r[k]); el.classList.toggle("ic-best", n===best && k==="total"); } });
+    ["ncb","addCover","benefit","gross","tax","total"].forEach(k=>{ const el = document.querySelector(`[data-calc="${n}.${k}"]`); if(el){ el.textContent = icFmt(r[k]); el.classList.toggle("ic-best", n===best && k==="total"); } });
   });
 }
 async function icSetSelected(n){ const c = icCur(); if(!c) return; c.selected = n; icRefreshCalc(); await persistInsComparisons(); renderInsComparisons(); }
