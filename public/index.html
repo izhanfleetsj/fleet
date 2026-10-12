@@ -4234,7 +4234,7 @@ function renderReqStatus(){
     const asg = hireAssignments(h);
     let status;
     if(h.status==="Cancelled") status = `${badge(fleetI18n.tr("Cancelled"),"danger")}${h.cancelReason?`<div style="font-size:10.5px;color:var(--danger);margin-top:3px;">${escHtml(h.cancelReason)}</div>`:""}`;
-    else if(h.status==="Assigned") status = badge(fleetI18n.tr("Assigned"),"good") + asg.map(a=>`<div style="font-size:11.5px;margin-top:4px;"><b>${escHtml(a.vehicle||"")}</b>${a.driverName && a.driverName!=="—" ? `<br><span style="color:var(--ink-soft);">${escHtml(a.driverName)}</span>` : ""}</div>`).join("");
+    else if(h.status==="Assigned") status = badge(fleetI18n.tr("Assigned"),"good") + asg.map(a=>`<div style="font-size:11.5px;margin-top:4px;"><b>${escHtml(a.vehicle||"")}</b>${a.driverName && a.driverName!=="—" ? `<br><span style="color:var(--ink-soft);">${escHtml(a.driverName)}</span>` : ""}${a.driverPhone && a.driverPhone!=="—" ? `<br><a class="map-link" href="tel:${escHtml(String(a.driverPhone).replace(/[^0-9+]/g,""))}" style="font-size:11px;">📞 ${escHtml(a.driverPhone)}</a>` : ""}</div>`).join("");
     else status = badge(fleetI18n.tr("Waiting to be assigned"),"warn");
     const sv = !h.sv || h.sv==="—" ? "—" : h.sv + (h.phone && h.phone!=="—" ? ` (${h.phone})` : "");
     const act = h.status==="Cancelled" ? "" : `<button type="button" class="btn ghost" style="padding:4px 9px;font-size:11px;color:var(--danger);white-space:nowrap;" onclick="cancelJobRequest(${i})">✕ <span>${escHtml(fleetI18n.tr("Cancel Job"))}</span></button>`;
