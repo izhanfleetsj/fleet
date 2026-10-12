@@ -2693,7 +2693,7 @@ function editInsComparison(id){
     </table></div>
     <div class="form-actions" style="margin-top:10px;">
       <button type="button" class="btn ghost" onclick="icAddQuote()">+ <span>Add insurer</span></button>
-      <button type="button" class="btn ghost" onclick="icApplyToRegister()" title="${escHtml(fleetI18n.tr("Copy the selected quote (insurer, sum insured, premium, period) to the Insurance Register"))}">⇩ <span>Apply selected to register</span></button>
+      <span style="font-size:11px;color:var(--ink-soft);margin-right:auto;">★ ${escHtml(fleetI18n.tr("The selected quote updates the Insurance Register and Insurance Database automatically."))}</span>
       <button type="button" class="btn ghost" onclick="printInsComparison('${c.id}')">🖨 <span>Print comparison</span></button>
       <button type="button" class="btn yellow" onclick="icClose()">✓ <span>Done</span></button>
     </div></div>`;
@@ -2715,6 +2715,7 @@ async function icFieldChanged(ev){
   if(ev.target.tagName==="INPUT" && ev.target.type!=="date") ev.target.value = v===""||v==null ? "" : v;
   icRefreshCalc();
   await persistInsComparisons();
+  if(c.selected!=null) await icSyncToRegister(c);
   const s = document.getElementById("icSaved"); if(s) s.textContent = "✓ " + fleetI18n.tr("Saved");
   renderInsComparisons();
 }
@@ -2726,7 +2727,7 @@ function icRefreshCalc(){
     ["ncb","addCover","benefit","gross","grossNet","tax","total"].forEach(k=>{ const el = document.querySelector(`[data-calc="${n}.${k}"]`); if(el){ el.textContent = icFmt(r[k]); el.classList.toggle("ic-best", n===best && k==="total"); } });
   });
 }
-async function icSetSelected(n){ const c = icCur(); if(!c) return; c.selected = n; icRefreshCalc(); await persistInsComparisons(); renderInsComparisons(); }
+async function icSetSelected(n){ const c = icCur(); if(!c) return; c.selected = n; icRefreshCalc(); await persistInsComparisons(); await icSyncToRegister(c); renderInsComparisons(); }
 async function icAddQuote(){ const c = icCur(); if(!c) return; if(c.quotes.length>=8){ A(fleetI18n.tr("Maximum 8 insurers.")); return; } c.quotes.push(icBlankQuote(c.quotes.length ? c.quotes[c.quotes.length-1].broker : "")); await persistInsComparisons(); editInsComparison(c.id); }
 async function icRemoveQuote(n){
   const c = icCur(); if(!c) return;
@@ -2743,23 +2744,42 @@ async function deleteInsComparison(id){
   if(icEditId===id) icClose();
   await persistInsComparisons(); renderInsComparisons();
 }
-async function icApplyToRegister(){
-  const c = icCur(); if(!c) return;
-  const b = icBest(c); const q = b!=null ? c.quotes[b] : null;
-  const d = complianceData.find(x=>x.id===c.vehicleId);
-  if(!q || !d){ A(fleetI18n.tr("Select a quote (★) first.")); return; }
+/* The ★ selected quote of a vehicle's latest comparison IS its current insurance: the
+   Insurance Register and the Insurance Database follow it automatically (no extra button). */
+function icLatestFor(vehicleId){ return insComparisons.filter(x=>x.vehicleId===vehicleId).sort((a,b)=>String(b.month).localeCompare(String(a.month)))[0]; }
+async function icSyncToRegister(c, opts={}){
+  if(!c || c.selected==null || !c.quotes[c.selected]) return false;
+  if(icLatestFor(c.vehicleId)!==c) return false;          // an older month never overwrites a newer one
+  const q = c.quotes[c.selected];
+  const d = complianceData.find(x=>x.id===c.vehicleId); if(!d) return false;
+  const before = JSON.stringify([d.insurer,d.insPremium,d.insSumInsured,d.insCover,d.insStart,d.insurance]);
   const t = icCalc(q, c.taxRate, c.ncd).total;
-  if(!confirm(fleetI18n.tr(`Update ${d.plate} in the Insurance Register with ${q.insurer} — RM ${icFmt(t)}?`))) return;
-  d.insurer = q.insurer; if(t) d.insPremium = t; if(icNum(q.sumAssured)) d.insSumInsured = icNum(q.sumAssured);
-  // plan name → Cover (Comprehensive / Third Party, Fire & Theft / Third Party)
+  if(q.insurer) d.insurer = q.insurer;
+  if(t) d.insPremium = t;
+  if(icNum(q.sumAssured)) d.insSumInsured = icNum(q.sumAssured);
   const plan = String(q.plan||"").toUpperCase();
   const cover = /COMPRE/.test(plan) ? "Comprehensive" : /FIRE|THEFT|TPFT/.test(plan) ? "Third Party, Fire & Theft" : /THIRD|\bTP\b/.test(plan) ? "Third Party" : null;
   if(cover) d.insCover = cover;
   if(c.periodFrom) d.insStart = isoToDmySlash(c.periodFrom);
   if(c.periodTo){ d.insurance = isoToDmySlash(c.periodTo); d.insuranceStatus = calcComplianceStatus(d.insurance); }
-  await persistComplianceRegister(); renderInsurance(); renderComplianceTable();
-  await upsertInsDbFromComparison(c, q);
-  A(fleetI18n.tr("Insurance Register and Insurance Database updated."));
+  const changed = before !== JSON.stringify([d.insurer,d.insPremium,d.insSumInsured,d.insCover,d.insStart,d.insurance]);
+  if(!opts.batch){
+    if(changed){ await persistComplianceRegister(); renderComplianceTable(); }
+    await upsertInsDbFromComparison(c, q, opts);
+    renderInsurance();
+  }
+  return changed;
+}
+/* Once when admin opens the app: bring the register in line with every selected quote. */
+async function icSyncAll(){
+  let changed = false;
+  const dbBefore = JSON.stringify(insuranceDb);
+  for(const c of insComparisons){
+    if(await icSyncToRegister(c, {batch:true})) changed = true;
+    if(c.selected!=null && icLatestFor(c.vehicleId)===c) await upsertInsDbFromComparison(c, c.quotes[c.selected], {noSave:true});
+  }
+  if(changed) await persistComplianceRegister();
+  if(JSON.stringify(insuranceDb)!==dbBefore) await persistInsuranceDb();
 }
 /* ---- Read a broker's "VEHICLE INSURANCE COMPARISON" PDF and fill a comparison ----
    Text is read with pdf.js (positions kept), grouped into lines, then matched by label:
@@ -2988,7 +3008,7 @@ function renderInsuranceDb(){
       <td class="mono-cell num" style="color:${c.change<0?"var(--good)":c.change>0?"var(--danger)":"inherit"};">${c.change==null?"—":idbSigned(c.change)}${c.changePct!=null?`<br><span style="font-size:10px;">${c.changePct<0?`(${Math.abs(c.changePct).toFixed(1)}%)`:c.changePct.toFixed(1)+"%"}</span>`:""}</td>
       <td>${badge(escHtml(fleetI18n.tr(c.verdict)), verdictCls)}</td><td>${badge(escHtml(fleetI18n.tr(c.renewal)), renCls)}</td>
       <td style="white-space:nowrap;">${c.complete==="Complete" ? "" : `<span title="${escHtml(fleetI18n.tr("Incomplete"))}" style="color:var(--warn);">⚠</span> `}<button type="button" class="btn ghost" style="padding:3px 8px;font-size:10.5px;" onclick="openInsDbForm('${r.id}')">✎</button> <button type="button" class="btn ghost" style="padding:3px 8px;font-size:10.5px;color:var(--danger);" onclick="deleteInsDbRecord('${r.id}')">✕</button></td></tr>`;
-  }).join("") || `<tr><td colspan="${colKeys.length+1}" style="text-align:center;color:var(--faint);padding:16px;">${escHtml(fleetI18n.tr("No records yet — click + Add record, or use ⇩ Apply selected to register in a comparison."))}</td></tr>`;
+  }).join("") || `<tr><td colspan="${colKeys.length+1}" style="text-align:center;color:var(--faint);padding:16px;">${escHtml(fleetI18n.tr("No records yet — click + Add record, or select a quote (★) in a comparison."))}</td></tr>`;
   document.getElementById("idbCount").textContent = fleetI18n.tr(`Showing ${rows.length} of ${insuranceDb.length} records`);
   document.getElementById("idbClearAllBtn").style.display = xlAnyActive("insdb") ? "inline-block" : "none";
 }
@@ -3111,7 +3131,7 @@ async function deleteInsDbRecord(id){
   await persistInsuranceDb(); renderInsuranceDb();
 }
 /* From a comparison's selected quote → the database record for that policy year (added or updated). */
-async function upsertInsDbFromComparison(c, q){
+async function upsertInsDbFromComparison(c, q, opts={}){
   const t = icCalc(q, c.taxRate, c.ncd);
   const year = (c.periodFrom || APP_TODAY_ISO).slice(0,4);
   let r = insuranceDb.find(x=>x.vehicleId===c.vehicleId && String(x.policyYear)===year);
@@ -3124,6 +3144,7 @@ async function upsertInsDbFromComparison(c, q){
     addCoverRm: t.addCover, ageLoading: r.ageLoading || "", perils: "", ncd: idbN(String(c.ncd||"").replace(/[%\s]/g,"")), basic: icNum(q.basic) ?? r.basic,
     stamp: t.stamp, taxRate: icNum(c.taxRate) ?? 8, excess: icNum(q.excess) ?? r.excess ?? "", remarks: r.remarks || `${q.broker||""} · ${fleetI18n.tr("from comparison")}`.trim() });
   r.rebate = t.rebate || "";   // kept separately so the totals match the comparison
+  if(opts.noSave) return;
   await persistInsuranceDb(); renderInsuranceDb();
 }
 function exportInsuranceDb(){
@@ -7164,7 +7185,7 @@ function printComplianceCalendar(){
   await loadHolidays();
   await loadDisposePipeline();
   await importPurchaseInbox();
-  if(currentRole==="admin"){ await loadInsComparisons(); await loadInsuranceDb(); }
+  if(currentRole==="admin"){ await loadInsComparisons(); await loadInsuranceDb(); await icSyncAll(); }
   await loadTickets();
   await loadHiringRecords();
   await loadDailyMovements();
