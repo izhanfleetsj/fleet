@@ -2554,7 +2554,7 @@ const IC_ROWS = [   // [key, label, type, section]
   ["sumAssured","Sum Assured (RM)","num","bench"], ["windscreen","Windscreen Coverage","num","bench"], ["excess","Excess","num","bench"],
   ["allDrivers","All Drivers","num","ben"], ["waiver","Waiver of Betterment","yn","ben"], ["windscreenPrem","Windscreen Coverage","num","ben"],
   ["towing","Unlimited Towing","num","ben"], ["pa","Personal Accident","num","ben"], ["flood","Special Peril including Flood","num","ben"], ["addCover","Additional Cover (RM)","calc","ben"],
-  ["basic","Basic Premium (RM)","num","prem"], ["ncb","NCB (RM)","calc","prem"], ["stamp","Stamp Duty (RM)","num","prem"],
+  ["basic","Basic Premium (RM)","num","prem"], ["ncb","NCB (RM)","calc","prem"], ["rebate","Rebate (RM)","num","prem"], ["stamp","Stamp Duty (RM)","num","prem"],
 ];
 const icNum = v => v==null || v==="" || isNaN(Number(v)) ? null : Number(v);
 function icCalc(q, taxRate, ncd){
@@ -2564,10 +2564,12 @@ function icCalc(q, taxRate, ncd){
   const benefit = ["allDrivers","windscreenPrem","towing","pa","flood"].reduce((t,k)=>t+(icNum(q[k])||0),0);
   const addCover = benefit;   // always the sum of the benefits above (not keyed in)
   const gross = (icNum(q.basic)||0) - (ncb||0) + addCover;
-  const tax = Math.round(gross * (icNum(taxRate)!=null ? icNum(taxRate) : 8)) / 100;
+  const tax = Math.round(gross * (icNum(taxRate)!=null ? icNum(taxRate) : 8)) / 100;   // tax is on the gross premium before rebate
+  const rebate = Math.abs(icNum(q.rebate)||0);
+  const grossNet = Math.round((gross - rebate)*100)/100;
   const stamp = icNum(q.stamp)!=null ? icNum(q.stamp) : 10;
   const hasPremium = icNum(q.basic)!=null;
-  return { ncb, benefit, addCover, gross, tax, stamp, total: hasPremium ? Math.round((gross + tax + stamp)*100)/100 : (icNum(q.total)) };
+  return { ncb, benefit, addCover, gross, tax, stamp, rebate, grossNet, total: hasPremium ? Math.round((grossNet + tax + stamp)*100)/100 : (icNum(q.total)) };
 }
 function icBlankQuote(broker, insurer){ return { broker:broker||"", insurer:insurer||"", plan:"COMPREHENSIVE", waiver:"YES", stamp:10 }; }
 async function loadInsComparisons(){
@@ -2663,6 +2665,7 @@ function editInsComparison(id){
       <tr class="ic-head"><th>${escHtml(fleetI18n.tr("Broker / Agency"))}</th>${c.quotes.map((q,n)=>`<td>${inp(`q.${n}.broker`, q.broker, 'class="dsp-up" placeholder="e.g. IN TOUCH"')}</td>`).join("")}</tr>
       ${qRows}
       ${calcRow("Gross Premium (RM)","gross","ic-tot")}
+      ${calcRow("Gross Premium (after rebate) (RM)","grossNet","ic-tot")}
       ${calcRow("Service Tax (RM)","tax")}
       ${calcRow("Total (RM)","total","ic-total")}
       <tr><th>${escHtml(fleetI18n.tr("Selected"))}</th>${c.quotes.map((q,n)=>`<td style="text-align:center;"><label style="cursor:pointer;font-size:11.5px;"><input type="radio" name="icSel" ${c.selected===n?"checked":""} onchange="icSetSelected(${n})"> ★</label>
@@ -2700,7 +2703,7 @@ function icRefreshCalc(){
   const best = icBest(c);
   c.quotes.forEach((q,n)=>{
     const r = icCalc(q, c.taxRate, c.ncd);
-    ["ncb","addCover","benefit","gross","tax","total"].forEach(k=>{ const el = document.querySelector(`[data-calc="${n}.${k}"]`); if(el){ el.textContent = icFmt(r[k]); el.classList.toggle("ic-best", n===best && k==="total"); } });
+    ["ncb","addCover","benefit","gross","grossNet","tax","total"].forEach(k=>{ const el = document.querySelector(`[data-calc="${n}.${k}"]`); if(el){ el.textContent = icFmt(r[k]); el.classList.toggle("ic-best", n===best && k==="total"); } });
   });
 }
 async function icSetSelected(n){ const c = icCur(); if(!c) return; c.selected = n; icRefreshCalc(); await persistInsComparisons(); renderInsComparisons(); }
@@ -2815,7 +2818,7 @@ function parseInsComparisonLines(lines){
   const quotes = cols.map((c,k)=>({ ...icBlankQuote(colBroker[k], c.insurer) }));
   const ROWS = [ [/^PLAN NAME/,"plan","text"], [/^SUM ASSURED/,"sumAssured"], [/^WINDSCREEN COVERAGE/,"windscreen","bench"], [/^EXCESS/,"excess"],
     [/^ALL DRIVERS/,"allDrivers"], [/^WAIVER OF BETTERMENT/,"waiver","text"], [/^WINDSCREEN COVERAGE/,"windscreenPrem","ben"], [/^UNLIMITED TOWING/,"towing"],
-    [/^PERSONAL ACCIDENT/,"pa"], [/^SPECIAL PERIL/,"flood"], [/^BASIC PREMIUM/,"basic"], [/^STAMP DUTY/,"stamp"] ];
+    [/^PERSONAL ACCIDENT/,"pa"], [/^SPECIAL PERIL/,"flood"], [/^BASIC PREMIUM/,"basic"], [/^REBATE/,"rebate"], [/^STAMP DUTY/,"stamp"] ];
   let section = "bench";
   grid.forEach(l=>{
     const t = up(l.text);
@@ -2824,9 +2827,14 @@ function parseInsComparisonLines(lines){
     if(!row) return;
     const [ , key, kind] = row;
     const first = l.cells[0];
-    l.cells.slice(1).forEach(c=>{ if(c.x < first.x + first.w) return; const n = nearest(c.cx); quotes[n][key] = kind==="text" ? up(c.s) : numv(c.s); });
+    l.cells.slice(1).forEach(c=>{
+      if(c.x < first.x + first.w) return;
+      const n = nearest(c.cx), v = kind==="text" ? up(c.s) : numv(String(c.s).replace(/^-\s+/,""));
+      if(v==="" && quotes[n][key]!=null && quotes[n][key]!=="") return;   // a stray "-" never wipes a number already read
+      quotes[n][key] = v;
+    });
   });
-  quotes.forEach(q=>{ if(q.waiver && !/^(YES|NO)$/.test(q.waiver)) q.waiver = "YES"; ["allDrivers","windscreenPrem","towing","pa","flood","excess"].forEach(k=>{ if(q[k]===undefined) q[k]=""; }); if(q.stamp==="" || q.stamp==null) q.stamp = 10; });
+  quotes.forEach(q=>{ if(q.rebate!=null && q.rebate!=="") q.rebate = Math.abs(q.rebate); if(q.waiver && !/^(YES|NO)$/.test(q.waiver)) q.waiver = "YES"; ["allDrivers","windscreenPrem","towing","pa","flood","excess"].forEach(k=>{ if(q[k]===undefined) q[k]=""; }); if(q.stamp==="" || q.stamp==null) q.stamp = 10; });
   return { info, quotes };
 }
 async function importInsComparisonPdfs(input){
@@ -2908,7 +2916,9 @@ function printInsComparison(id){
     <div class="gap"></div>
     <table><tr><td class="bar" colspan="${n+1}">PREMIUM DETAILS</td></tr>
       ${numRow("Basic Premium (RM)","basic")}${calcRow("NCB (RM)","ncb")}${calcRow("Additional Cover (RM)","addCover")}
-      ${calcRow("Gross Premium (RM)","gross",' class="tot"')}${calcRow(`Service Tax (${icNum(c.taxRate)!=null?c.taxRate:8}%) (RM)`,"tax")}${calcRow("Stamp Duty (RM)","stamp")}
+      ${calcRow("Gross Premium (RM)","gross",' class="tot"')}
+      <tr><td>Rebate</td>${calc.map((r,k)=>`<td${cls(k)}>${r.rebate ? "-" + icFmt(r.rebate) : "-"}</td>`).join("")}</tr>
+      ${calcRow("Gross Premium (after rebate) (RM)","grossNet",' class="tot"')}${calcRow(`Service Tax (${icNum(c.taxRate)!=null?c.taxRate:8}%) (RM)`,"tax")}${calcRow("Stamp Duty (RM)","stamp")}
       <tr class="tot"><th style="text-align:left;width:24%;">Total (RM)</th>${calc.map((r,k)=>`<th${cls(k)}>${icFmt(r.total)}</th>`).join("")}</tr>
     </table></div>`;
   w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Insurance Comparison — ${e(c.plate)} — ${monthName}</title><style>${IC_PRINT_CSS}</style></head><body>${html}<script>window.onload=function(){window.print();}<\/script></body></html>`);

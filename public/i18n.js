@@ -480,6 +480,8 @@
     ["Select a quote (★) first.","Pilih sebut harga (★) dahulu."],
     ["Insurance Register updated.","Daftar Insurans dikemas kini."],
     ["auto","auto"],
+    ["Rebate (RM)","Rebat (RM)"],
+    ["Gross Premium (after rebate) (RM)","Premium Kasar (selepas rebat) (RM)"],
     ["Upload comparison PDF","Muat naik PDF perbandingan"],
     ["Reading","Membaca"],
     ["vehicle","kenderaan"],
