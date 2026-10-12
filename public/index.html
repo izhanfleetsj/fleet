@@ -321,6 +321,8 @@ label{font-size:11px;font-weight:600;color:var(--ink-soft);text-transform:upperc
 .ic-calc{text-align:right;font-family:'IBM Plex Mono',monospace;color:var(--ink-soft);}
 .ic-tot .ic-calc{font-weight:700;color:var(--ink);} .ic-total .ic-calc,.ic-total th{font-weight:700;color:var(--ink);font-size:12.5px;}
 .ic-lock .ic-calc{background:var(--panel-2);color:var(--ink);}
+.idb-totals th{background:#fdf3d6;color:#1C1E1F;font-size:10.5px;text-align:right;font-family:'IBM Plex Mono',monospace;}
+#idbBody td{font-size:11px;padding-left:5px;padding-right:5px;} #idbBody .badge{white-space:normal;line-height:1.25;display:inline-block;} #idbBody .idb-sub{white-space:normal;} #idbHeadRow th{padding-left:5px;padding-right:5px;} #idbBody td.num{text-align:right;}
 .ic-calc.ic-best{background:#92d050;color:#1C1E1F;}
 .dsp-actions{display:flex;flex-wrap:wrap;gap:4px;justify-content:flex-end;width:98px;margin-left:auto;}
 #disposeBody .badge{white-space:normal;line-height:1.25;display:inline-block;}
@@ -996,6 +998,23 @@ body:not(.is-admin) .admin-only{display:none !important;}
           </table>
           </div>
           <div style="display:flex;align-items:center;gap:10px;margin-top:8px;"><div id="insCount" style="font-size:11px;color:var(--ink-soft);"></div><button type="button" class="btn ghost" id="insClearAllBtn" style="display:none;padding:3px 9px;font-size:10.5px;" onclick="xlClearAll('insurance')">✕ Clear all filters</button></div>
+        </div>
+
+        <div class="panel admin-only" id="idbPanel">
+          <div class="panel-head">
+            <h3>Vehicle's Insurance Database — All Policy Years</h3>
+            <span class="sub" style="font-size:11px;color:var(--ink-soft);margin-left:auto;">One record per vehicle per policy year · premium comparison = Gross Premium + Service Tax (stamp duty excluded)</span>
+            <button type="button" class="btn ghost" onclick="exportInsuranceDb()">⬇ <span>Export Excel</span></button>
+            <button type="button" class="btn yellow" onclick="openInsDbForm()">+ <span>Add record</span></button>
+          </div>
+          <div id="idbForm" style="display:none;margin-bottom:12px;"></div>
+          <div class="fit-table" style="max-height:560px;overflow:auto;border:1px solid var(--line);border-radius:var(--radius);">
+          <table id="idbTable">
+            <thead style="position:sticky;top:0;background:var(--panel);z-index:1;"><tr id="idbTotals" class="idb-totals"></tr><tr id="idbHeadRow"></tr></thead>
+            <tbody id="idbBody"></tbody>
+          </table>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px;margin-top:8px;"><div id="idbCount" style="font-size:11px;color:var(--ink-soft);"></div><button type="button" class="btn ghost" id="idbClearAllBtn" style="display:none;padding:3px 9px;font-size:10.5px;" onclick="xlClearAll('insdb')">✕ Clear all filters</button></div>
         </div>
       </section>
 
@@ -2479,7 +2498,7 @@ xlRegister("insurance", {
 });
 function renderInsurance(){
   if(!document.getElementById("insBody")) return;
-  if(currentRole==="admin") renderInsComparisons();
+  if(currentRole==="admin"){ renderInsComparisons(); renderInsuranceDb(); }
   const withDate = complianceData.filter(d=>d.insurance);
   const premiums = complianceData.map(d=>Number(d.insPremium)).filter(n=>n>0);
   document.getElementById("insTotal").textContent = withDate.length;
@@ -2738,7 +2757,8 @@ async function icApplyToRegister(){
   if(c.periodFrom) d.insStart = isoToDmySlash(c.periodFrom);
   if(c.periodTo){ d.insurance = isoToDmySlash(c.periodTo); d.insuranceStatus = calcComplianceStatus(d.insurance); }
   await persistComplianceRegister(); renderInsurance(); renderComplianceTable();
-  A(fleetI18n.tr("Insurance Register updated."));
+  await upsertInsDbFromComparison(c, q);
+  A(fleetI18n.tr("Insurance Register and Insurance Database updated."));
 }
 /* ---- Read a broker's "VEHICLE INSURANCE COMPARISON" PDF and fill a comparison ----
    Text is read with pdf.js (positions kept), grouped into lines, then matched by label:
@@ -2868,6 +2888,200 @@ async function importInsComparisonPdfs(input){
   renderInsComparisons();
   msg.textContent = out.join("  ·  ");
   if(icEditId && out.some(x=>x.startsWith("✓"))) editInsComparison(icEditId);
+}
+/* ===================== INSURANCE DATABASE (ALL POLICY YEARS) =====================
+   Same layout as the "Vehicle's Insurance Database" workbook: admin enters the policy
+   details (blue columns); the rest is worked out (grey) and compared with the vehicle's
+   previous policy year (green). Premium comparison = Gross Premium + Service Tax. */
+const IDB_KEY = "fleetInsuranceDb_v1";
+let insuranceDb = [], idbEditId = null;
+async function loadInsuranceDb(){ try{ const r = await window.storage.get(IDB_KEY, true); const v = r && JSON.parse(r.value); if(Array.isArray(v)) insuranceDb = v; }catch(e){} }
+async function persistInsuranceDb(){
+  try{ await window.storage.set(IDB_KEY, JSON.stringify(insuranceDb), true); setSyncStatus("✓ " + fleetI18n.tr("Saved") + " " + nowTimeStr()); }
+  catch(e){ A(fleetI18n.tr("Could not save — please try again.")); }
+}
+const IDB_INPUTS = [   // [key, label, type]
+  ["policyYear","Policy Year","year"], ["vehicleId","Vehicle No.","vehicle"], ["operator","Insurance Operator","text"],
+  ["start","Start Date","date"], ["end","End Date","date"], ["cover","Type of Cover","cover"], ["yearMade","Year Made","year"],
+  ["makeModel","Make & Model","text"], ["sumInsured","Sum Insured (RM)","num"], ["addCoverText","Additional Coverage","text"],
+  ["addCoverRm","Additional Coverage (RM)","num"], ["ageLoading","Vehicle Age Loading (RM)","num"], ["perils","Special Perils (RM)","num"],
+  ["ncd","NCD (%)","num"], ["basic","Basic Contribution (RM)","num"], ["stamp","Stamp Duty (RM)","num"], ["excess","Excess (RM)","num"],
+  ["hpOwner","Hire Purchase Owners","text"], ["drivers","Authorised Drivers","text"], ["remarks","Remarks","text"],
+];
+const idbN = v => v==null || v==="" || isNaN(Number(v)) ? 0 : Number(v);
+const r2 = x => Math.round(x*100)/100;
+function idbVehicle(r){ return complianceData.find(d=>d.id===r.vehicleId) || {}; }
+function idbCalc(r){
+  const basic = idbN(r.basic), ncdPct = idbN(r.ncd);
+  const ncdRm = r2(basic * ncdPct / 100);
+  const gross = r2(basic - ncdRm + idbN(r.addCoverRm) + idbN(r.ageLoading) + idbN(r.perils));
+  const tax = r2(gross * (r.taxRate!=null && r.taxRate!=="" ? idbN(r.taxRate) : 8) / 100);
+  const stamp = r.stamp==null || r.stamp==="" ? 10 : idbN(r.stamp);
+  const total = r2(gross + tax + stamp), exSd = r2(gross + tax);
+  const rate = idbN(r.sumInsured) ? basic / idbN(r.sumInsured) * 100 : null;
+  const v = idbVehicle(r), plate = v.plate || r.plate || "";
+  // previous year: the same vehicle's latest record from an earlier policy year
+  const prev = insuranceDb.filter(x=>x!==r && utilPlateKey(idbVehicle(x).plate || x.plate)===utilPlateKey(plate) && Number(x.policyYear) < Number(r.policyYear))
+    .sort((a,b)=>Number(b.policyYear)-Number(a.policyYear))[0];
+  const prevEx = prev ? idbCalcBasic(prev).exSd : null;
+  const change = prevEx!=null ? r2(exSd - prevEx) : null;
+  const changePct = prevEx ? change / prevEx * 100 : null;
+  const verdict = prevEx==null ? "New / no prior-year record" : change < 0 ? "Saving" : change > 0 ? "Increase" : "No change";
+  const complete = r.vehicleId!=null && r.operator && r.start && r.end && r.cover && idbN(r.sumInsured) && idbN(r.basic);
+  // renewal: a later policy year exists → Renewed; otherwise by end date
+  const later = insuranceDb.some(x=>x!==r && utilPlateKey(idbVehicle(x).plate || x.plate)===utilPlateKey(plate) && Number(x.policyYear) > Number(r.policyYear));
+  let renewal = "—";
+  if(later) renewal = "Renewed";
+  else if(r.end){ const days = Math.round((new Date(r.end) - new Date(APP_TODAY_ISO)) / 86400000); renewal = days < 0 ? "Expired — not renewed" : days <= 30 ? "Due for renewal" : "Active"; }
+  return { ncdRm, gross, tax, stamp, total, exSd, rate, prevEx, change, changePct, verdict, complete: complete ? "Complete" : "Incomplete", renewal, plate, company: v.company || r.company || "", vtype: v.category || r.vtype || "" };
+}
+function idbCalcBasic(r){   // without the previous-year lookup (avoids recursion)
+  const basic = idbN(r.basic), ncdRm = r2(basic * idbN(r.ncd) / 100);
+  const gross = r2(basic - ncdRm + idbN(r.addCoverRm) + idbN(r.ageLoading) + idbN(r.perils));
+  const tax = r2(gross * (r.taxRate!=null && r.taxRate!=="" ? idbN(r.taxRate) : 8) / 100);
+  return { exSd: r2(gross + tax) };
+}
+const idbMoney = v => v==null || v==="" ? "—" : Number(v).toLocaleString("en-MY",{minimumFractionDigits:2, maximumFractionDigits:2});
+const idbSigned = v => v==null ? "" : v < 0 ? `(${idbMoney(-v)})` : idbMoney(v);
+xlRegister("insdb", {
+  data: ()=>insuranceDb,
+  render: ()=>renderInsuranceDb(),
+  cols: [
+    {key:"policyYear", label:"Policy Year", num:true},
+    {key:"plate", label:"Vehicle No.", get:r=>idbCalc(r).plate},
+    {key:"company", label:"Company", get:r=>idbCalc(r).company},
+    {key:"operator", label:"Insurance Operator"},
+    {key:"end", label:"Period", date:true, get:r=>isoToDmy(r.end)},
+    {key:"sumInsured", label:"Sum Insured (RM)", num:true},
+    {key:"ncd", label:"NCD (%)", num:true},
+    {key:"basic", label:"Basic Contribution (RM)", num:true},
+    {key:"gross", label:"Gross Premium (RM)", num:true, get:r=>idbCalc(r).gross},
+    {key:"tax", label:"Service Tax (RM)", num:true, get:r=>idbCalc(r).tax},
+    {key:"total", label:"Total Payable (RM)", num:true, get:r=>idbCalc(r).total},
+    {key:"change", label:"Change vs Prev. Year (RM)", num:true, get:r=>{ const c = idbCalc(r).change; return c==null ? "" : c; }},
+    {key:"verdict", label:"Saving / Increase", get:r=>idbCalc(r).verdict},
+    {key:"renewal", label:"Renewal Status", get:r=>idbCalc(r).renewal},
+  ],
+});
+function renderInsuranceDb(){
+  const body = document.getElementById("idbBody"); if(!body) return;
+  document.getElementById("idbHeadRow").innerHTML = xlHeaderHtml("insdb").replace(/<th>/g,(m,i)=>m) + `<th></th>`;
+  const rows = xlRows("insdb");
+  if(!XL_TABLES.insdb.sort) rows.sort((a,b)=>String(idbCalc(a).plate).localeCompare(String(idbCalc(b).plate)) || Number(a.policyYear)-Number(b.policyYear));
+  const calc = rows.map(r=>[r, idbCalc(r)]);
+  const sum = k => calc.reduce((t,[,c])=>t+(c[k]||0),0);
+  // totals of the rows shown (like the workbook's "Totals of rows currently shown")
+  const colKeys = XL_TABLES.insdb.cols.map(c=>c.key);
+  const tot = {gross:sum("gross"), tax:sum("tax"), total:sum("total"), change:calc.reduce((t,[,c])=>t+(c.change||0),0)};
+  document.getElementById("idbTotals").innerHTML = colKeys.map((k,i)=> i===0 ? `<th colspan="1" style="text-align:left;font-size:10px;">${escHtml(fleetI18n.tr("Totals (shown)"))}</th>` : tot[k]!=null ? `<th class="idb-tot">${k==="change"?idbSigned(tot[k]):idbMoney(tot[k])}</th>` : `<th></th>`).join("") + `<th></th>`;
+  body.innerHTML = calc.map(([r,c])=>{
+    const verdictCls = c.verdict==="Saving" ? "good" : c.verdict==="Increase" ? "danger" : "neutral";
+    const renCls = /Expired/.test(c.renewal) ? "danger" : /Due/.test(c.renewal) ? "warn" : c.renewal==="—" ? "neutral" : "good";
+    return `<tr>
+      <td class="mono-cell">${escHtml(r.policyYear||"")}</td><td style="font-weight:600;"><span style="white-space:nowrap;">${escHtml(c.plate)}</span><div class="idb-sub" style="font-size:10px;font-weight:400;color:var(--ink-soft);min-width:90px;">${escHtml([c.vtype, r.makeModel].filter(Boolean).join(" · "))}</div></td><td>${escHtml(c.company)}</td>
+      <td>${escHtml(r.operator||"")}<div class="idb-sub" style="font-size:10px;color:var(--ink-soft);">${escHtml(r.cover||"")}</div></td><td class="mono-cell" style="white-space:nowrap;">${escHtml(isoToDmy(r.start))}<br>${escHtml(isoToDmy(r.end))}</td>
+      <td class="mono-cell num">${idbMoney(r.sumInsured)}</td><td class="mono-cell num">${r.ncd!=null&&r.ncd!==""?Number(r.ncd).toFixed(2)+"%":"—"}</td>
+      <td class="mono-cell num">${idbMoney(r.basic)}</td><td class="mono-cell num">${idbMoney(c.gross)}</td><td class="mono-cell num">${idbMoney(c.tax)}</td>
+      <td class="mono-cell num" style="font-weight:600;">${idbMoney(c.total)}<div style="font-size:9.5px;font-weight:400;color:var(--ink-soft);" title="${escHtml(fleetI18n.tr("Premium excl. Stamp Duty (RM)"))}">${escHtml(fleetI18n.tr("excl. SD"))} ${idbMoney(c.exSd)}</div></td>
+      <td class="mono-cell num" style="color:${c.change<0?"var(--good)":c.change>0?"var(--danger)":"inherit"};">${c.change==null?"—":idbSigned(c.change)}${c.changePct!=null?`<br><span style="font-size:10px;">${c.changePct<0?`(${Math.abs(c.changePct).toFixed(1)}%)`:c.changePct.toFixed(1)+"%"}</span>`:""}</td>
+      <td>${badge(escHtml(fleetI18n.tr(c.verdict)), verdictCls)}</td><td>${badge(escHtml(fleetI18n.tr(c.renewal)), renCls)}</td>
+      <td style="white-space:nowrap;">${c.complete==="Complete" ? "" : `<span title="${escHtml(fleetI18n.tr("Incomplete"))}" style="color:var(--warn);">⚠</span> `}<button type="button" class="btn ghost" style="padding:3px 8px;font-size:10.5px;" onclick="openInsDbForm('${r.id}')">✎</button> <button type="button" class="btn ghost" style="padding:3px 8px;font-size:10.5px;color:var(--danger);" onclick="deleteInsDbRecord('${r.id}')">✕</button></td></tr>`;
+  }).join("") || `<tr><td colspan="${colKeys.length+1}" style="text-align:center;color:var(--faint);padding:16px;">${escHtml(fleetI18n.tr("No records yet — click + Add record, or use ⇩ Apply selected to register in a comparison."))}</td></tr>`;
+  document.getElementById("idbCount").textContent = fleetI18n.tr(`Showing ${rows.length} of ${insuranceDb.length} records`);
+  document.getElementById("idbClearAllBtn").style.display = xlAnyActive("insdb") ? "inline-block" : "none";
+}
+function openInsDbForm(id){
+  const r = id ? insuranceDb.find(x=>x.id===id) : null;
+  idbEditId = r ? r.id : null;
+  const v = r || { policyYear: APP_TODAY_ISO.slice(0,4), stamp: 10, ncd: "", cover: "Comprehensive", taxRate: 8 };
+  const vehOpts = complianceData.slice().sort((a,b)=>String(a.plate).localeCompare(String(b.plate))).map(d=>`<option value="${d.id}" ${v.vehicleId===d.id?"selected":""}>${escHtml(d.plate)} — ${escHtml(d.company)}</option>`).join("");
+  const field = ([k,label,type]) => {
+    const val = v[k]==null ? "" : v[k];
+    let ctl;
+    if(type==="vehicle") ctl = `<select id="idb_${k}"><option value="">${escHtml(fleetI18n.tr("— Select vehicle —"))}</option>${vehOpts}</select>`;
+    else if(type==="cover") ctl = `<select id="idb_${k}">${INS_COVERS.map(c=>`<option ${c===val?"selected":""}>${c}</option>`).join("")}</select>`;
+    else if(type==="date") ctl = `<input id="idb_${k}" type="date" value="${escHtml(val)}">`;
+    else if(type==="num" || type==="year") ctl = `<input id="idb_${k}" inputmode="decimal" value="${escHtml(val)}" ${k==="stamp"?'placeholder="10"':""}>`;
+    else ctl = `<input id="idb_${k}" value="${escHtml(val)}">`;
+    return `<div><label>${escHtml(fleetI18n.tr(label))}</label>${ctl}</div>`;
+  };
+  const f = document.getElementById("idbForm");
+  f.innerHTML = `<div class="ic-editor">
+    <div style="font-weight:700;font-size:12.5px;margin-bottom:8px;">${escHtml(fleetI18n.tr(r ? "Edit record" : "New record"))}</div>
+    <div class="form-row" style="grid-template-columns:repeat(4,1fr);">${IDB_INPUTS.slice(0,8).map(field).join("")}</div>
+    <div class="form-row" style="grid-template-columns:repeat(4,1fr);">${IDB_INPUTS.slice(8,16).map(field).join("")}</div>
+    <div class="form-row" style="grid-template-columns:1fr 2fr 3fr 3fr;">${IDB_INPUTS.slice(16).map(field).join("")}</div>
+    <div id="idbPreview" style="font-size:12px;margin:6px 0;"></div>
+    <div class="form-actions"><button type="button" class="btn ghost" onclick="document.getElementById('idbForm').style.display='none'">${escHtml(fleetI18n.tr("Cancel"))}</button>
+      <button type="button" class="btn yellow" onclick="saveInsDbRecord()">💾 ${escHtml(fleetI18n.tr("Save"))}</button></div></div>`;
+  f.style.display = "block";
+  // vehicle picked → fill make/model & year from the register when empty; auto policy year from start date
+  document.getElementById("idb_vehicleId").addEventListener("change", e=>{ const d = complianceData.find(x=>String(x.id)===e.target.value); if(d){ const mm = document.getElementById("idb_makeModel"); if(!mm.value) mm.value = d.category||""; const op = document.getElementById("idb_operator"); if(!op.value && d.insurer) op.value = d.insurer; } idbPreview(); });
+  document.getElementById("idb_start").addEventListener("change", e=>{ if(e.target.value){ document.getElementById("idb_policyYear").value = e.target.value.slice(0,4); const en = document.getElementById("idb_end"); if(!en.value){ const t = new Date(e.target.value); t.setFullYear(t.getFullYear()+1); t.setDate(t.getDate()-1); en.value = t.toISOString().slice(0,10); } } idbPreview(); });
+  f.querySelectorAll("input,select").forEach(el=>el.addEventListener("input", idbPreview));
+  idbPreview();
+  f.scrollIntoView({behavior:"smooth", block:"start"});
+}
+function idbReadForm(){
+  const o = {};
+  IDB_INPUTS.forEach(([k,,type])=>{ const el = document.getElementById("idb_"+k); let v = el ? el.value.trim() : "";
+    if(type==="vehicle") v = v==="" ? null : Number(v);
+    else if(type==="num") v = v==="" ? "" : Number(v.replace(/[,%\s]/g,""));
+    else if(type==="text") v = v.toUpperCase();
+    o[k] = v; });
+  return o;
+}
+function idbPreview(){
+  const el = document.getElementById("idbPreview"); if(!el) return;
+  const o = { ...(insuranceDb.find(x=>x.id===idbEditId)||{}), ...idbReadForm() };
+  const c = idbCalc(o);
+  el.innerHTML = `<b>${escHtml(fleetI18n.tr("Automatic"))}:</b> NCD ${idbMoney(c.ncdRm)} · ${escHtml(fleetI18n.tr("Insurance Rate"))} ${c.rate!=null?c.rate.toFixed(2)+"%":"—"} · ${escHtml(fleetI18n.tr("Gross"))} ${idbMoney(c.gross)} · ${escHtml(fleetI18n.tr("Service Tax"))} ${idbMoney(c.tax)} · <b>${escHtml(fleetI18n.tr("Total"))} RM ${idbMoney(c.total)}</b>`
+    + (c.prevEx!=null ? ` · ${escHtml(fleetI18n.tr("vs previous year"))}: <span style="color:${c.change<0?"var(--good)":"var(--danger)"};font-weight:600;">${idbSigned(c.change)} (${c.changePct.toFixed(1)}%) ${escHtml(fleetI18n.tr(c.verdict))}</span>` : "");
+}
+async function saveInsDbRecord(){
+  const o = idbReadForm();
+  if(o.vehicleId==null){ A(fleetI18n.tr("Please select a vehicle first.")); return; }
+  if(!o.policyYear) o.policyYear = (o.start||APP_TODAY_ISO).slice(0,4);
+  const dup = insuranceDb.find(x=>x.id!==idbEditId && x.vehicleId===o.vehicleId && String(x.policyYear)===String(o.policyYear));
+  if(dup && !confirm(fleetI18n.tr("This vehicle already has a record for that policy year. Save another one anyway?"))) return;
+  if(idbEditId){ Object.assign(insuranceDb.find(x=>x.id===idbEditId), o); }
+  else insuranceDb.push({ id: "idb" + Date.now().toString(36) + Math.random().toString(36).slice(2,5), taxRate: 8, ...o });
+  const d = complianceData.find(x=>x.id===o.vehicleId); if(d){ const rec = insuranceDb.find(x=>x.vehicleId===o.vehicleId && String(x.policyYear)===String(o.policyYear)); rec.plate = d.plate; }
+  document.getElementById("idbForm").style.display = "none";
+  await persistInsuranceDb(); renderInsuranceDb();
+}
+async function deleteInsDbRecord(id){
+  const r = insuranceDb.find(x=>x.id===id); if(!r) return;
+  if(!confirm(fleetI18n.tr(`Delete ${idbCalc(r).plate} ${r.policyYear}?`))) return;
+  insuranceDb = insuranceDb.filter(x=>x.id!==id);
+  await persistInsuranceDb(); renderInsuranceDb();
+}
+/* From a comparison's selected quote → the database record for that policy year (added or updated). */
+async function upsertInsDbFromComparison(c, q){
+  const t = icCalc(q, c.taxRate, c.ncd);
+  const year = (c.periodFrom || APP_TODAY_ISO).slice(0,4);
+  let r = insuranceDb.find(x=>x.vehicleId===c.vehicleId && String(x.policyYear)===year);
+  if(!r){ r = { id: "idb" + Date.now().toString(36) + Math.random().toString(36).slice(2,5), vehicleId: c.vehicleId, policyYear: year }; insuranceDb.push(r); }
+  const plan = String(q.plan||"").toUpperCase();
+  Object.assign(r, { plate: c.plate, operator: q.insurer || r.operator, start: c.periodFrom || r.start, end: c.periodTo || r.end,
+    cover: /COMPRE/.test(plan) ? "Comprehensive" : /FIRE|THEFT|TPFT/.test(plan) ? "Third Party, Fire & Theft" : /THIRD/.test(plan) ? "Third Party" : (r.cover||"Comprehensive"),
+    yearMade: c.mfgYear || r.yearMade, makeModel: c.makeModel || r.makeModel, sumInsured: icNum(q.sumAssured) ?? r.sumInsured,
+    addCoverText: ["allDrivers","windscreenPrem","towing","pa","flood"].filter(k=>icNum(q[k])).map(k=>({allDrivers:"ALL DRIVERS",windscreenPrem:"WINDSCREEN",towing:"TOWING",pa:"PA",flood:"SPECIAL PERILS"}[k])).join(", "),
+    addCoverRm: t.addCover, ageLoading: r.ageLoading || "", perils: "", ncd: idbN(String(c.ncd||"").replace(/[%\s]/g,"")), basic: icNum(q.basic) ?? r.basic,
+    stamp: t.stamp, taxRate: icNum(c.taxRate) ?? 8, excess: icNum(q.excess) ?? r.excess ?? "", remarks: r.remarks || `${q.broker||""} · ${fleetI18n.tr("from comparison")}`.trim() });
+  // a rebate lowers the premium: keep it so the totals match the comparison
+  if(t.rebate) r.addCoverRm = r2(t.addCover - t.rebate);
+  await persistInsuranceDb(); renderInsuranceDb();
+}
+function exportInsuranceDb(){
+  if(typeof XLSX==="undefined"){ A("Excel library not loaded — please refresh the page."); return; }
+  const head = ["Policy Year","Vehicle No.","Company","Vehicle Type","Insurance Operator","Start Date","End Date","Type of Cover","Year Made","Make & Model","Sum Insured (RM)","Additional Coverage","Additional Coverage (RM)","Vehicle Age Loading (RM)","Special Perils (RM)","NCD","NCD (RM)","Basic Contribution (RM)","Insurance Rate (%)","Gross Premium (RM)","Service Tax (RM)","Stamp Duty (RM)","Total Amount Payable (RM)","Premium excl. Stamp Duty (RM)","Excess (RM)","Hire Purchase Owners","Authorised Drivers","Remarks","Record Status","Prev. Year Premium excl. SD (RM)","Change vs Prev. Year (RM)","Change %","Saving / Increase","Renewal Status"];
+  const rows = xlRows("insdb").map(r=>{ const c = idbCalc(r); return [Number(r.policyYear)||r.policyYear, c.plate, c.company, c.vtype, r.operator, isoToDmy(r.start), isoToDmy(r.end), r.cover, r.yearMade, r.makeModel,
+    idbN(r.sumInsured), r.addCoverText, idbN(r.addCoverRm), idbN(r.ageLoading), idbN(r.perils), idbN(r.ncd)/100, c.ncdRm, idbN(r.basic), c.rate!=null ? c.rate/100 : "", c.gross, c.tax, c.stamp, c.total, c.exSd,
+    idbN(r.excess), r.hpOwner, r.drivers, r.remarks, c.complete, c.prevEx ?? "", c.change ?? "", c.changePct!=null ? c.changePct/100 : "", c.verdict, c.renewal]; });
+  const ws = XLSX.utils.aoa_to_sheet([["VEHICLE'S INSURANCE DATABASE - ALL POLICY YEARS"], [], head, ...rows]);
+  const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Insurance Database");
+  XLSX.writeFile(wb, `Insurance_Database_${APP_TODAY_ISO}.xlsx`);
 }
 const IC_PRINT_CSS = `*{box-sizing:border-box;} body{font-family:Calibri,Arial,Helvetica,sans-serif;font-size:11px;color:#000;margin:0;}
   .page{width:210mm;min-height:296mm;margin:0 auto;padding:16mm 14mm;page-break-after:always;} .page:last-child{page-break-after:auto;}
@@ -6897,7 +7111,7 @@ function printComplianceCalendar(){
   await loadHolidays();
   await loadDisposePipeline();
   await importPurchaseInbox();
-  if(currentRole==="admin") await loadInsComparisons();
+  if(currentRole==="admin"){ await loadInsComparisons(); await loadInsuranceDb(); }
   await loadTickets();
   await loadHiringRecords();
   await loadDailyMovements();
