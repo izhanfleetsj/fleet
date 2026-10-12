@@ -480,6 +480,11 @@
     ["Select a quote (★) first.","Pilih sebut harga (★) dahulu."],
     ["Insurance Register updated.","Daftar Insurans dikemas kini."],
     ["auto","auto"],
+    ["Upload comparison PDF","Muat naik PDF perbandingan"],
+    ["Reading","Membaca"],
+    ["vehicle","kenderaan"],
+    ["not found in the register — select the vehicle first, then upload again.","tiada dalam daftar — pilih kenderaan dahulu, kemudian muat naik semula."],
+    ["insurers read from","insurer dibaca dari"],
     ["Auto: Basic Premium × NCD %","Auto: Premium Asas × NCD %"],
     ["Purchase Order (PO) — if the job needs one, e.g. collecting premix","Purchase Order (PO) — jika job memerlukan PO, cth. ambil premix"],
     ["Upload (PDF / Photo)","Muat naik (PDF / Gambar)"],
@@ -842,6 +847,7 @@
   ];
 
   const TEMPLATES = [
+    ["Replace the existing comparison for {a} with the PDF?","Ganti perbandingan sedia ada untuk {a} dengan PDF ini?"],
     ["Delete {a}?","Padam {a}?"],
     ["Update {a} in the Insurance Register with {b} — RM {c}?","Kemas kini {a} dalam Daftar Insurans dengan {b} — RM {c}?"],
     ["Showing {a} job(s) — yesterday, today and upcoming","Paparan {a} job — semalam, hari ini dan akan datang"],

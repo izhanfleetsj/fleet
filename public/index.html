@@ -977,6 +977,8 @@ body:not(.is-admin) .admin-only{display:none !important;}
             <select id="icNewVeh" style="max-width:300px;"></select>
             <button type="button" class="btn yellow" onclick="newInsComparison()">+ <span>New comparison</span></button>
             <button type="button" class="btn ghost" onclick="printInsMonthlySummary()">🖨 <span>Monthly summary</span></button>
+            <label class="btn ghost" style="cursor:pointer;margin:0;display:inline-flex;align-items:center;gap:4px;text-transform:none;letter-spacing:0;" title="Upload the broker's Vehicle Insurance Comparison PDF — the details are filled in automatically">📄 <span>Upload comparison PDF</span><input type="file" accept="application/pdf,.pdf" multiple hidden onchange="importInsComparisonPdfs(this)"></label>
+            <span id="icImportMsg" style="font-size:11.5px;color:var(--ink-soft);"></span>
           </div>
           <div id="icList"></div>
           <div id="icEditor" style="display:none;margin-top:12px;"></div>
@@ -985,9 +987,6 @@ body:not(.is-admin) .admin-only{display:none !important;}
         <div class="panel">
           <div class="panel-head">
             <h3>Insurance Register</h3>
-            <span class="sub" style="font-size:11px;color:var(--ink-soft);margin-left:auto;">Expiry date is shared with the Compliance Register — change it in either place</span>
-            <button type="button" class="btn ghost admin-only" onclick="importInsuranceFromSheet()">🔗 Import from Google Sheet</button>
-            <label class="btn yellow admin-only" style="cursor:pointer;margin:0;display:inline-flex;align-items:center;text-transform:none;letter-spacing:0;">📥 Import policy PDFs<input type="file" accept="application/pdf,.pdf" multiple hidden onchange="importInsurancePdfs(this)"></label>
           </div>
           <div id="insPdfStatus" style="display:none;font-size:11.5px;margin:-6px 0 10px;white-space:pre-line;"></div>
           <div style="max-height:600px;overflow:auto;border:1px solid var(--line);border-radius:var(--radius);">
@@ -2730,6 +2729,130 @@ async function icApplyToRegister(){
   if(c.periodTo){ d.insurance = isoToDmySlash(c.periodTo); d.insuranceStatus = calcComplianceStatus(d.insurance); }
   await persistComplianceRegister(); renderInsurance(); renderComplianceTable();
   A(fleetI18n.tr("Insurance Register updated."));
+}
+/* ---- Read a broker's "VEHICLE INSURANCE COMPARISON" PDF and fill a comparison ----
+   Text is read with pdf.js (positions kept), grouped into lines, then matched by label:
+   vehicle info / previous insurance (label → value) and the quote grid (one column per insurer,
+   matched by x position; the broker header row decides each column's broker). */
+async function icPdfLines(file){
+  if(typeof pdfjsLib === "undefined") throw new Error("PDF reader not loaded — please refresh the page.");
+  pdfjsLib.GlobalWorkerOptions.workerSrc = "/vendor/pdf.worker.min.js";
+  const pdf = await pdfjsLib.getDocument({data: await file.arrayBuffer()}).promise;
+  const page = await pdf.getPage(1);
+  const tc = await page.getTextContent();
+  const items = tc.items.filter(t=>t.str && t.str.trim()).map(t=>({ s:t.str.trim(), x:t.transform[4], y:t.transform[5], w:t.width||0 }));
+  const lines = [];
+  items.sort((a,b)=>b.y-a.y || a.x-b.x).forEach(it=>{
+    const ln = lines.find(l=>Math.abs(l.y-it.y)<3);
+    if(ln) ln.items.push(it); else lines.push({y:it.y, items:[it]});
+  });
+  lines.forEach(l=>{
+    l.items.sort((a,b)=>a.x-b.x);
+    const cells = [];   // merge words that sit next to each other into one cell
+    l.items.forEach(it=>{ const c = cells[cells.length-1]; if(c && it.x - (c.x+c.w) < 4){ c.s += (it.x-(c.x+c.w) > 0.8 ? " " : "") + it.s; c.w = it.x + it.w - c.x; } else cells.push({...it}); });
+    l.cells = cells.map(c=>({...c, cx: c.x + c.w/2}));
+    l.text = cells.map(c=>c.s).join(" ");
+  });
+  return lines.sort((a,b)=>b.y-a.y);
+}
+function parseInsComparisonLines(lines){
+  const up = s => String(s||"").toUpperCase().replace(/\s+/g," ").trim();
+  const numv = s => { const t = String(s||"").replace(/,/g,"").trim(); return t==="" || t==="-" || isNaN(Number(t)) ? "" : Number(t); };
+  // label → value pairs from the two info boxes (a line can hold one label on each side)
+  const LABELS = {"COMPANY":"owner","VEHICLE NO":"plate","MAKE / MODEL":"makeModel","VEHICLE CLASS":"vehClass","NCD":"ncd","MFG YEAR":"mfgYear","PERIOD OF COVERAGE":"period",
+    "INSURER":"prev.insurer","BROKER":"prev.broker","AMT SUM INSURED":"prev.sumInsured","AMT PAYABLE":"prev.payable","MONTH :":"month","MONTH":"month"};
+  const info = {};
+  let gridTop = null;
+  for(const l of lines){
+    if(/BENCHMARKING/i.test(l.text)){ gridTop = l.y; break; }
+    const cells = l.cells;
+    for(let k=0;k<cells.length;k++){
+      const key = up(cells[k].s).replace(/\s*:$/,"");
+      const f = LABELS[key] || LABELS[key+" :"];
+      if(f && !info[f]){ const v = cells[k+1] && !LABELS[up(cells[k+1].s).replace(/\s*:$/,"")] ? cells[k+1].s : ""; if(v && v!==":") info[f] = v.trim(); else if(cells[k+2]) info[f] = cells[k+2].s.trim(); }
+    }
+  }
+  // quote grid
+  const grid = gridTop==null ? [] : lines.filter(l=>l.y<=gridTop);
+  const compLine = grid.find(l=>/^INSURANCE COMPANY/i.test(l.text));
+  if(!compLine) throw new Error("This does not look like a Vehicle Insurance Comparison PDF (no 'Insurance Company' row).");
+  const labelEdge = compLine.cells[0].x + compLine.cells[0].w + 2;
+  const cols = compLine.cells.slice(1).filter(c=>c.x>labelEdge-2).map(c=>({ insurer: up(c.s), cx: c.cx }));
+  if(!cols.length) throw new Error("No insurer columns were found in the PDF.");
+  const nearest = cx => cols.reduce((best,c,k)=>Math.abs(c.cx-cx) < Math.abs(cols[best].cx-cx) ? k : best, 0);
+  // broker header: the line just above "Insurance Company" with names over the columns
+  const headIdx = grid.indexOf(compLine);
+  const brokerLine = grid.slice(0, headIdx).reverse().find(l=>l.cells.some(c=>c.x>labelEdge && !/^DESCRIPTION$/i.test(c.s)));
+  const brokers = brokerLine ? brokerLine.cells.filter(c=>c.x>labelEdge-2 && !/^DESCRIPTION$/i.test(c.s)).map(c=>({b: up(c.s), cx:c.cx})) : [];
+  // A broker's name is centred over its group of columns: split the columns (left→right) into
+  // consecutive groups, one per broker, so each group's middle lines up best with its broker name.
+  const colBroker = new Array(cols.length).fill("");
+  if(brokers.length){
+    let best = null;
+    const walk = (bi, start, acc, cost) => {
+      if(bi===brokers.length-1){
+        const g = cols.slice(start); if(!g.length) return;
+        const total = cost + Math.abs((g[0].cx + g[g.length-1].cx)/2 - brokers[bi].cx);
+        if(!best || total < best.cost) best = { cost: total, cuts: [...acc, start] };
+        return;
+      }
+      for(let end = start+1; end <= cols.length-(brokers.length-1-bi); end++){
+        const g = cols.slice(start, end);
+        walk(bi+1, end, [...acc, start], cost + Math.abs((g[0].cx + g[g.length-1].cx)/2 - brokers[bi].cx));
+      }
+    };
+    if(brokers.length <= cols.length) walk(0, 0, [], 0);
+    if(best) best.cuts.forEach((st,bi)=>{ const en = best.cuts[bi+1] ?? cols.length; for(let k=st;k<en;k++) colBroker[k] = brokers[bi].b; });
+    else cols.forEach((c,k)=>{ colBroker[k] = brokers.reduce((a,b)=>Math.abs(b.cx-c.cx)<Math.abs(a.cx-c.cx)?b:a).b; });
+  }
+  const quotes = cols.map((c,k)=>({ ...icBlankQuote(colBroker[k], c.insurer) }));
+  const ROWS = [ [/^PLAN NAME/,"plan","text"], [/^SUM ASSURED/,"sumAssured"], [/^WINDSCREEN COVERAGE/,"windscreen","bench"], [/^EXCESS/,"excess"],
+    [/^ALL DRIVERS/,"allDrivers"], [/^WAIVER OF BETTERMENT/,"waiver","text"], [/^WINDSCREEN COVERAGE/,"windscreenPrem","ben"], [/^UNLIMITED TOWING/,"towing"],
+    [/^PERSONAL ACCIDENT/,"pa"], [/^SPECIAL PERIL/,"flood"], [/^BASIC PREMIUM/,"basic"], [/^STAMP DUTY/,"stamp"] ];
+  let section = "bench";
+  grid.forEach(l=>{
+    const t = up(l.text);
+    if(/^BENEFITS/.test(t)) section = "ben"; else if(/^PREMIUM DETAILS/.test(t)) section = "prem";
+    const row = ROWS.find(([re,,sec])=>re.test(t) && (!sec || sec==="text" || sec===section));
+    if(!row) return;
+    const [ , key, kind] = row;
+    const first = l.cells[0];
+    l.cells.slice(1).forEach(c=>{ if(c.x < first.x + first.w) return; const n = nearest(c.cx); quotes[n][key] = kind==="text" ? up(c.s) : numv(c.s); });
+  });
+  quotes.forEach(q=>{ if(q.waiver && !/^(YES|NO)$/.test(q.waiver)) q.waiver = "YES"; ["allDrivers","windscreenPrem","towing","pa","flood","excess"].forEach(k=>{ if(q[k]===undefined) q[k]=""; }); if(q.stamp==="" || q.stamp==null) q.stamp = 10; });
+  return { info, quotes };
+}
+async function importInsComparisonPdfs(input){
+  if(currentRole!=="admin") return;
+  const files = [...(input.files||[])]; input.value = "";
+  const msg = document.getElementById("icImportMsg");
+  const out = [];
+  for(const file of files){
+    msg.textContent = `${fleetI18n.tr("Reading")} ${file.name}…`;
+    try{
+      const { info, quotes } = parseInsComparisonLines(await icPdfLines(file));
+      const plateKey = utilPlateKey(info.plate);
+      let d = plateKey && complianceData.find(x=>utilPlateKey(x.plate)===plateKey);
+      if(!d){ const sel = document.getElementById("icNewVeh").value; d = complianceData.find(x=>String(x.id)===sel); }
+      if(!d){ out.push(`✕ ${file.name}: ${fleetI18n.tr("vehicle")} ${info.plate||"?"} ${fleetI18n.tr("not found in the register — select the vehicle first, then upload again.")}`); continue; }
+      const ym = icMonthVal();
+      const [from, to] = String(info.period||"").split(/\s*-\s*/).map(x=>dmyToIso(x.trim())||"");
+      const num = v => { const t = String(v||"").replace(/,/g,""); return t && !isNaN(Number(t)) ? Number(t) : ""; };
+      let c = insComparisons.find(x=>x.month===ym && x.vehicleId===d.id);
+      if(c && !confirm(fleetI18n.tr(`Replace the existing comparison for ${d.plate} with the PDF?`))) continue;
+      if(!c){ c = { id: "ic" + Date.now().toString(36) + Math.random().toString(36).slice(2,5), month: ym, vehicleId: d.id, plate: d.plate }; insComparisons.push(c); }
+      Object.assign(c, { owner: String(info.owner||d.company||"").toUpperCase(), makeModel: String(info.makeModel||"").toUpperCase(), vehClass: String(info.vehClass||"").toUpperCase(),
+        ncd: info.ncd || "", mfgYear: info.mfgYear || "", periodFrom: from||"", periodTo: to||"",
+        prev: { insurer: String(info["prev.insurer"]||"").toUpperCase(), broker: String(info["prev.broker"]||"").toUpperCase(), sumInsured: num(info["prev.sumInsured"]), payable: num(info["prev.payable"]) },
+        taxRate: c.taxRate || 8, selected: null, quotes, source: file.name });
+      out.push(`✓ ${d.plate}: ${quotes.length} ${fleetI18n.tr("insurers read from")} ${file.name}`);
+      icEditId = c.id;
+    }catch(err){ console.warn(err); out.push(`✕ ${file.name}: ${err.message}`); }
+  }
+  await persistInsComparisons();
+  renderInsComparisons();
+  msg.textContent = out.join("  ·  ");
+  if(icEditId && out.some(x=>x.startsWith("✓"))) editInsComparison(icEditId);
 }
 const IC_PRINT_CSS = `*{box-sizing:border-box;} body{font-family:Calibri,Arial,Helvetica,sans-serif;font-size:11px;color:#000;margin:0;}
   .page{width:210mm;min-height:296mm;margin:0 auto;padding:16mm 14mm;page-break-after:always;} .page:last-child{page-break-after:auto;}
