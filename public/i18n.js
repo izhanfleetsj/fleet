@@ -509,6 +509,8 @@
     ["Record Status","Status Rekod"],
     ["Totals (shown)","Jumlah (dipaparkan)"],
     ["Period","Tempoh"],
+    ["Job Cancelled","Job Dibatalkan"],
+    ["This month — not counted elsewhere","Bulan ini — tidak dikira di kotak lain"],
     ["Hire vs Own — by Item","Sewa vs Sendiri — ikut Item"],
     ["This month's assigned jobs, counted per vehicle (a 2-unit job counts 2)","Job di-assign bulan ini, dikira setiap kenderaan (job 2 unit dikira 2)"],
     ["Logged from WhatsApp requests","Dilog dari permintaan WhatsApp"],
