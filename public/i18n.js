@@ -510,6 +510,8 @@
     ["Record Status","Status Rekod"],
     ["Totals (shown)","Jumlah (dipaparkan)"],
     ["Period","Tempoh"],
+    ["Pickup Location","Lokasi Ambil (Pickup)"],
+    ["Drop-off Location","Lokasi Hantar (Drop-off)"],
     ["Delete this record","Padam rekod ini"],
     ["Prev. Year Amount Payable (RM)","Jumlah Dibayar Tahun Lepas (RM)"],
     ["vehicle not in register","kenderaan tiada dalam daftar"],

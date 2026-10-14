@@ -794,10 +794,17 @@ body:not(.is-admin) .admin-only{display:none !important;}
           </div>
           <div class="form-row">
             <div style="grid-column:1/-1;">
-              <label>Tempat</label>
+              <label>Pickup Location</label>
               <div style="display:flex;gap:8px;align-items:center;">
                 <input id="hr_tempat" style="flex:1;">
-                <button type="button" class="btn ghost" style="white-space:nowrap;padding:9px 12px;" onclick="shareHireLocation()" id="hr_locBtn">📍 Kongsi Lokasi</button>
+                <button type="button" class="btn ghost" style="white-space:nowrap;padding:9px 12px;" onclick="shareHireLocation('hr_tempat','hr_locBtn')" id="hr_locBtn">📍 Kongsi Lokasi</button>
+              </div>
+            </div>
+            <div style="grid-column:1/-1;">
+              <label>Drop-off Location</label>
+              <div style="display:flex;gap:8px;align-items:center;">
+                <input id="hr_dropoff" style="flex:1;">
+                <button type="button" class="btn ghost" style="white-space:nowrap;padding:9px 12px;" onclick="shareHireLocation('hr_dropoff','hr_locBtn2')" id="hr_locBtn2">📍 Kongsi Lokasi</button>
               </div>
               <span id="hr_locStatus" style="font-size:11px;color:var(--ink-soft);display:block;margin-top:4px;"></span>
             </div>
@@ -4729,10 +4736,11 @@ function locationHtml(tempat){
   else if(text) html += btn(mapUrlForPlace(text), "🔎 Search Map");
   return html;
 }
-function updateAssignMapLink(tempat){
+function updateAssignMapLink(tempat, dropoff){
   const el = document.getElementById("as_tempat_link");
   if(!el) return;
-  el.innerHTML = tempat && tempat!=="—" ? locationHtml(tempat).replace(/^<span>.*?<\/span>/, "") : "";
+  const links = v => v && v!=="—" ? locationHtml(v).replace(/^<span>.*?<\/span>/, "") : "";
+  el.innerHTML = dropoff ? `<b style="font-size:10px;">PICKUP</b> ${links(tempat)} <b style="font-size:10px;margin-left:6px;">DROP-OFF</b> ${links(dropoff)}` : links(tempat);
 }
 
 /* Job request text is stored in one format — UPPERCASE with single spaces — whether it
@@ -4743,7 +4751,15 @@ function normText(v){
   if(!str || str==="—") return str;
   return str.split(/(https?:\/\/\S+)/).map((part,i)=> i%2 ? part : part.toUpperCase()).join("");
 }
-const HIRE_TEXT_FIELDS = ["unit","company","project","tempat","load","sv","driverName"];
+const HIRE_TEXT_FIELDS = ["unit","company","project","tempat","dropoff","load","sv","driverName"];
+/* Pickup / drop-off lines for WhatsApp messages (older jobs only have one "Tempat"). */
+function hireLocLines(h, plain){
+  const clean = v => plain ? String(v||"").replace(/https?:\/\/\S+/g,"").trim() : (v||"—");
+  return h.dropoff ? `Pickup : ${clean(h.tempat)||"—"}\nDropoff : ${clean(h.dropoff)}` : `Tempat : ${clean(h.tempat)||"—"}`;
+}
+function hireLocHtml(h){
+  return h.dropoff ? `<div><b style="font-size:10px;color:var(--ink-soft);">PICKUP</b> ${locationHtml(h.tempat)}</div><div style="margin-top:3px;"><b style="font-size:10px;color:var(--ink-soft);">DROP-OFF</b> ${locationHtml(h.dropoff)}</div>` : locationHtml(h.tempat);
+}
 function normalizeHireRecord(h){
   let changed = false;
   HIRE_TEXT_FIELDS.forEach(f=>{ if(typeof h[f]==="string"){ const n = normText(h[f]); if(n!==h[f]){ h[f] = n; changed = true; } } });
@@ -4774,7 +4790,7 @@ xlRegister("hiring", {
     {key:"company", label:"Company / Project"},
     {key:"branch",  label:"Branch"},
     {key:"tarikh",  label:"Date / Time", date:true},
-    {key:"tempat",  label:"Location", get: h=>String(h.tempat||"").replace(/https?:\/\/\S+/g,"").replace(/\s*·\s*/g," ").trim()},
+    {key:"tempat",  label:"Location", get: h=>[h.tempat, h.dropoff].filter(Boolean).join(" → ").replace(/https?:\/\/\S+/g,"").replace(/\s*·\s*/g," ").trim()},
     {key:"sv",      label:"Supervisor (site)"},
     {key:"assignedVehicle", label:"Assigned Vehicle", get: h=>hireAssignments(h).map(a=>a.vehicle).join(", ")},
     {key:"status",  label:"Status"},
@@ -4801,7 +4817,7 @@ function renderHireTable(){
     const qty = h.qty || (String(h.unit||"").match(/^\s*(\d+)\b/)||[])[1] || 1;
     return `<tr><td style="font-weight:600;">${escHtml(h.item || h.unit)}</td><td class="mono-cell" style="text-align:center;">${qty}</td><td>${escHtml(h.company)}<br><span style="font-size:11px;color:var(--ink-soft);">${escHtml(h.project)}</span>${h.poFile?`<br>${poLinkHtml(h.poFile)}`:""}</td>
     <td class="mono-cell">${escHtml(h.branch||"—")}</td>
-    <td class="mono-cell">${h.tarikh} ${h.masa && h.masa!=="—"?"· "+h.masa:""}</td><td class="loc-cell">${locationHtml(h.tempat)}</td><td>${escHtml(svLine)}</td>
+    <td class="mono-cell">${h.tarikh} ${h.masa && h.masa!=="—"?"· "+h.masa:""}</td><td class="loc-cell">${hireLocHtml(h)}</td><td>${escHtml(svLine)}</td>
     <td>${vehCell}</td><td>${badge(h.status,cls)}${h.status==="Cancelled" && h.cancelReason ? `<div style="font-size:10.5px;color:var(--danger);margin-top:3px;">${escHtml(h.cancelReason)}</div>` : ""}</td><td style="white-space:nowrap;">${actionCell}${deleteBtn}</td></tr>`;
   }).join("") || `<tr><td colspan="10" style="color:var(--faint);text-align:center;">No job records</td></tr>`;
   const cnt = document.getElementById("hireCount");
@@ -4962,7 +4978,7 @@ async function uploadHirePo(file){
   }catch(err){ if(msg) msg.textContent = ""; A(err.message); }
 }
 function clearHireForm(){
-  ["hr_item","hr_branch","hr_company","hr_company_other","hr_tarikh","hr_masa","hr_project","hr_tempat","hr_load","hr_sv","hr_phone"].forEach(id=>document.getElementById(id).value="");
+  ["hr_item","hr_branch","hr_company","hr_company_other","hr_tarikh","hr_masa","hr_project","hr_tempat","hr_dropoff","hr_load","hr_sv","hr_phone"].forEach(id=>document.getElementById(id).value="");
   document.getElementById("hr_qty").value = 1;
   hrPoFile = null; renderHirePo();
   document.getElementById("hr_company_other").style.display = "none";
@@ -4971,12 +4987,13 @@ function clearHireForm(){
   const ws = document.getElementById("waPasteStatus"); if(ws) ws.textContent = "";
 }
 /* ---- Share location (macam feature "Share Location" WhatsApp) — guna GPS peranti utk auto-isi Tempat ---- */
-function shareHireLocation(){
+function shareHireLocation(target, btnId){
+  target = target || "hr_tempat"; btnId = btnId || "hr_locBtn";
   if(!navigator.geolocation){
     A("Peranti/browser ini tak sokong perkongsian lokasi (GPS). Sila taip alamat secara manual.");
     return;
   }
-  const btn = document.getElementById("hr_locBtn");
+  const btn = document.getElementById(btnId);
   const status = document.getElementById("hr_locStatus");
   const originalLabel = btn.textContent;
   btn.disabled = true; btn.textContent = T("📍 Mencari lokasi…");
@@ -4991,7 +5008,7 @@ function shareHireLocation(){
       if(res.ok){ const data = await res.json(); addr = data && data.display_name ? data.display_name : null; }
     }catch(e){ console.warn("Reverse geocode gagal, guna koordinat sahaja:", e); }
 
-    document.getElementById("hr_tempat").value = addr ? addr : `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
+    document.getElementById(target).value = addr ? addr : `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
     status.innerHTML = `📍 ${T("Lokasi didapati")} — <a href="${mapsLink}" target="_blank" rel="noopener" style="color:var(--good);">${T("Lihat di Google Maps")}</a>`;
     btn.disabled = false; btn.textContent = originalLabel;
   }, (err)=>{
@@ -5018,11 +5035,12 @@ async function logHireRequest(){
   const masa = masaRaw ? formatMasa12Hr(masaRaw) : "—";
   const project = document.getElementById("hr_project").value.trim() || "—";
   const tempat = document.getElementById("hr_tempat").value.trim() || "—";
+  const dropoff = document.getElementById("hr_dropoff").value.trim();
   const load = document.getElementById("hr_load").value.trim() || "—";
   const sv = document.getElementById("hr_sv").value.trim() || "—";
   const phone = document.getElementById("hr_phone").value.trim() || "—";
 
-  const rec = {unit,item,qty,branch,company,project,tarikh,masa,tempat,load,sv,phone,status:"New",source:null,assignedVehicle:null,driverName:null,driverPhone:null};
+  const rec = {unit,item,qty,branch,company,project,tarikh,masa,tempat,dropoff,load,sv,phone,status:"New",source:null,assignedVehicle:null,driverName:null,driverPhone:null};
   if(hrPoFile) rec.poFile = hrPoFile;
   normalizeHireRecord(rec);
   hiringRecords.unshift(rec);
@@ -5045,7 +5063,7 @@ function notifyHireWhatsApp(){
   if(!h) return;
   const contact = getBranchNotifyContact(h.branch);
   if(!contact.phone){ A("Tiada no WhatsApp admin/PIC ditetapkan lagi. Sila admin isi di Settings."); return; }
-  const text = `*Job Request Baru — ${h.unit}*\n\nCompany : ${h.company}\nBranch : ${h.branch}\nTarikh : ${h.tarikh}\nMasa : ${h.masa}\nProject : ${h.project}\nTempat : ${h.tempat}\nLoad : ${h.load}\nSv : ${h.sv}${h.phone && h.phone!=="—" ? " ("+h.phone+")" : ""}`;
+  const text = `*Job Request Baru — ${h.unit}*\n\nCompany : ${h.company}\nBranch : ${h.branch}\nTarikh : ${h.tarikh}\nMasa : ${h.masa}\nProject : ${h.project}\n${hireLocLines(h)}\nLoad : ${h.load}\nSv : ${h.sv}${h.phone && h.phone!=="—" ? " ("+h.phone+")" : ""}`;
   openWhatsApp(contact.phone, text);
 }
 
@@ -5063,7 +5081,7 @@ function renderReqStatus(){
     const iso = dmyToIso(h.tarikh);
     if(!iso || iso < sinceIso) return false;
     if(br && h.branch!==br) return false;
-    if(q && ![h.sv,h.project,h.tempat,h.company,h.item,h.unit,h.phone].join(" ").toUpperCase().includes(q)) return false;
+    if(q && ![h.sv,h.project,h.tempat,h.dropoff,h.company,h.item,h.unit,h.phone].join(" ").toUpperCase().includes(q)) return false;
     return true;
   }).sort((a,b)=>(dmyToIso(b.tarikh)||"").localeCompare(dmyToIso(a.tarikh)||"") || hiringRecords.indexOf(a)-hiringRecords.indexOf(b));
   body.innerHTML = rows.map(h=>{
@@ -5077,7 +5095,7 @@ function renderReqStatus(){
     const act = h.status==="Cancelled" ? "" : `<button type="button" class="btn ghost" style="padding:4px 9px;font-size:11px;color:var(--danger);white-space:nowrap;" onclick="cancelJobRequest(${i})">✕ <span>${escHtml(fleetI18n.tr("Cancel Job"))}</span></button>`;
     return `<tr${h.status==="Cancelled"?' style="opacity:.6;"':""}><td style="font-weight:600;">${escHtml(h.unit || h.item)}</td><td>${escHtml(h.company)}<br><span style="font-size:11px;color:var(--ink-soft);">${escHtml(h.project)}</span>${h.poFile?`<br>${poLinkHtml(h.poFile)}`:""}</td>
       <td class="mono-cell">${escHtml(h.branch||"—")}</td><td class="mono-cell">${escHtml(h.tarikh)}${h.masa && h.masa!=="—" ? "<br>"+escHtml(h.masa) : ""}</td>
-      <td>${escHtml(String(h.tempat||"").replace(/https?:\/\/\S+/g,"").trim()||"—")}</td><td>${escHtml(sv)}</td><td>${status}</td><td>${act}</td></tr>`;
+      <td>${escHtml(String(h.tempat||"").replace(/https?:\/\/\S+/g,"").trim()||"—")}${h.dropoff?`<br><span style="font-size:11px;color:var(--ink-soft);">→ ${escHtml(String(h.dropoff).replace(/https?:\/\/\S+/g,"").trim())}</span>`:""}</td><td>${escHtml(sv)}</td><td>${status}</td><td>${act}</td></tr>`;
   }).join("") || `<tr><td colspan="8" style="color:var(--faint);text-align:center;padding:16px;">${escHtml(fleetI18n.tr("No job requests"))}</td></tr>`;
   document.getElementById("rsCount").textContent = fleetI18n.tr(`Showing ${rows.length} job(s) — yesterday, today and upcoming`);
 }
@@ -5098,7 +5116,7 @@ async function cancelJobRequest(i){
   showJobCancelPanel(h);
 }
 function jobCancelText(h, a){
-  return `*JOB CANCELLED / JOB DIBATALKAN*\n\nItem : ${h.unit||h.item}${a&&a.vehicle?`\nKenderaan : ${a.vehicle}`:""}\nCompany : ${h.company}\nProject : ${h.project}\nTarikh : ${h.tarikh}${h.masa&&h.masa!=="—"?" · "+h.masa:""}\nTempat : ${String(h.tempat||"").replace(/https?:\/\/\S+/g,"").trim()}\nSv : ${h.sv}${h.phone&&h.phone!=="—"?" ("+h.phone+")":""}${h.cancelReason?`\nSebab : ${h.cancelReason}`:""}\n\nMohon maaf, job di atas telah *DIBATALKAN*. Terima kasih.`;
+  return `*JOB CANCELLED / JOB DIBATALKAN*\n\nItem : ${h.unit||h.item}${a&&a.vehicle?`\nKenderaan : ${a.vehicle}`:""}\nCompany : ${h.company}\nProject : ${h.project}\nTarikh : ${h.tarikh}${h.masa&&h.masa!=="—"?" · "+h.masa:""}\n${hireLocLines(h, true)}\nSv : ${h.sv}${h.phone&&h.phone!=="—"?" ("+h.phone+")":""}${h.cancelReason?`\nSebab : ${h.cancelReason}`:""}\n\nMohon maaf, job di atas telah *DIBATALKAN*. Terima kasih.`;
 }
 function showJobCancelPanel(h){
   const panel = document.getElementById("rsCancelPanel");
@@ -5319,8 +5337,8 @@ function openAssignPanel(index){
   setRequestField("as_tarikh", h.tarikh, "tiada dalam request");
   setRequestField("as_masa", h.masa, "tiada dalam request");
   setRequestField("as_project", h.project, "tiada dalam request");
-  setRequestField("as_tempat", h.tempat, "tiada dalam request");
-  updateAssignMapLink(h.tempat);
+  setRequestField("as_tempat", h.dropoff ? `${h.tempat||"—"} → ${h.dropoff}` : h.tempat, "tiada dalam request");
+  updateAssignMapLink(h.tempat, h.dropoff);
   document.getElementById("as_load").value = h.load;
   document.getElementById("as_sv").value = h.sv;
   document.getElementById("as_sv_phone").value = h.phone;
@@ -5371,7 +5389,7 @@ Tarikh : ${h.tarikh || "—"}
 Masa : ${h.masa || "—"}
 Company : ${h.company}
 Project: ${h.project || "—"}
-Tempat : ${h.tempat || "—"}
+${hireLocLines(h)}
 ${vehLines}
 Sv tapak : ${h.sv}${h.phone && h.phone!=="—" ? " ("+h.phone+")" : ""}${h.poFile ? `\nPO : ${poUrl(h.poFile)}` : ""}`;
 
@@ -5405,7 +5423,7 @@ Tarikh : ${h.tarikh || "—"}
 Masa : ${h.masa || "—"}
 Company : ${h.company}
 Project : ${h.project || "—"}
-Tempat : ${h.tempat || "—"}
+${hireLocLines(h)}
 Load : ${h.load || "—"}
 Kenderaan : ${a.vehicle}
 Sv tapak : ${h.sv}${h.phone && h.phone!=="—" ? " ("+h.phone+")" : ""}${h.poFile ? `\n\n*PO (sila bawa / tunjuk)* : ${poUrl(h.poFile)}` : ""}`;
