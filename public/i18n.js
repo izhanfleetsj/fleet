@@ -510,6 +510,7 @@
     ["Record Status","Status Rekod"],
     ["Totals (shown)","Jumlah (dipaparkan)"],
     ["Period","Tempoh"],
+    ["Delete this record","Padam rekod ini"],
     ["Prev. Year Amount Payable (RM)","Jumlah Dibayar Tahun Lepas (RM)"],
     ["vehicle not in register","kenderaan tiada dalam daftar"],
     ["No ★ selected yet","Belum ada ★ dipilih"],
@@ -910,6 +911,7 @@
   ];
 
   const TEMPLATES = [
+    ["Delete {a} from New / Dispose? The Compliance Register is not changed.","Padam {a} dari Baharu / Pelupusan? Daftar Pematuhan tidak diubah."],
     ["Insurance Register updated for {a} vehicle(s).","Daftar Insurans dikemas kini untuk {a} kenderaan."],
     ["Create {a} record(s) from the Insurance Register? NCD and Basic Premium still need to be filled in.","Cipta {a} rekod dari Daftar Insurans? NCD dan Premium Asas masih perlu diisi."],
     ["Showing {a} of {b} records","Paparan {a} daripada {b} rekod"],

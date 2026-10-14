@@ -6230,7 +6230,7 @@ function renderDisposeTable(){
          <td class="mono-cell">${escHtml(isoToDmy(m.date))||"—"}</td><td>${escHtml(m.party)||"—"}</td>`;
     const actions = editing
       ? `<span id="dspSaved" style="font-size:10.5px;color:var(--good);margin-right:6px;"></span><button type="button" class="btn" style="${btn}" onclick="disposeEditRef='';renderDisposeTable()">✓ <span>${escHtml(fleetI18n.tr("Done"))}</span></button>`
-      : `<button type="button" class="btn ghost" style="${btn}" title="${escHtml(fleetI18n.tr(i.kind==="request"?"Edit request / upload quotations":m.isNew?"Enter purchase details":"Enter sold value"))}" onclick="${i.kind==="request" ? `togglePurchaseRequestForm('${ref}')` : `disposeEditRef='${ref}';renderDisposeTable()`}">✎ <span>${escHtml(fleetI18n.tr("Edit"))}</span>${i.kind==="request" && (i.quotes||[]).length ? ` · 📎${i.quotes.length}` : ""}</button>${i.rec && r.stageKey==="disposed" ? ` <button type="button" class="btn ghost" style="${btn}" title="${escHtml(fleetI18n.tr("Restore to register"))}" onclick="restoreDisposedVehicle(${r.idx})">↩</button>` : ""}${i.kind==="request" ? ` <button type="button" class="btn ghost" style="${btn}" title="${escHtml(fleetI18n.tr("Step 1 — print request form (page 1) for the head of department to sign"))}" onclick="printPurchaseRequest('${r.stageKey}',${r.idx},'form')">🖨 1</button> <button type="button" class="btn ghost" style="${btn}" ${(i.quotes||[]).length?"":"disabled"} title="${escHtml(fleetI18n.tr("Step 3 — print quotation summary, quotations and the management approval page"))}" onclick="printPurchaseRequest('${r.stageKey}',${r.idx},'full')">🖨 2</button> <button type="button" class="btn ghost" style="${btn}color:#C1443C;" title="${escHtml(fleetI18n.tr("Delete request"))}" onclick="deletePurchaseRequest('${r.stageKey}',${r.idx})">✕</button>` : ""}`;
+      : `<button type="button" class="btn ghost" style="${btn}" title="${escHtml(fleetI18n.tr(i.kind==="request"?"Edit request / upload quotations":m.isNew?"Enter purchase details":"Enter sold value"))}" onclick="${i.kind==="request" ? `togglePurchaseRequestForm('${ref}')` : `disposeEditRef='${ref}';renderDisposeTable()`}">✎ <span>${escHtml(fleetI18n.tr("Edit"))}</span>${i.kind==="request" && (i.quotes||[]).length ? ` · 📎${i.quotes.length}` : ""}</button>${i.rec && r.stageKey==="disposed" ? ` <button type="button" class="btn ghost" style="${btn}" title="${escHtml(fleetI18n.tr("Restore to register"))}" onclick="restoreDisposedVehicle(${r.idx})">↩</button>` : ""}${i.kind!=="request" ? ` <button type="button" class="btn ghost" style="${btn}color:#C1443C;" title="${escHtml(fleetI18n.tr("Delete this record"))}" onclick="deleteDisposeItem('${r.stageKey}',${r.idx})">✕</button>` : ""}${i.kind==="request" ? ` <button type="button" class="btn ghost" style="${btn}" title="${escHtml(fleetI18n.tr("Step 1 — print request form (page 1) for the head of department to sign"))}" onclick="printPurchaseRequest('${r.stageKey}',${r.idx},'form')">🖨 1</button> <button type="button" class="btn ghost" style="${btn}" ${(i.quotes||[]).length?"":"disabled"} title="${escHtml(fleetI18n.tr("Step 3 — print quotation summary, quotations and the management approval page"))}" onclick="printPurchaseRequest('${r.stageKey}',${r.idx},'full')">🖨 2</button> <button type="button" class="btn ghost" style="${btn}color:#C1443C;" title="${escHtml(fleetI18n.tr("Delete request"))}" onclick="deletePurchaseRequest('${r.stageKey}',${r.idx})">✕</button>` : ""}`;
     return `<tr><td>${stageCell}</td>
       <td style="font-weight:600;">${escHtml(rec.plate || i.plate || i.veh || "")||"—"}${i.requestedBy?`<div style="font-size:10px;font-weight:400;color:var(--ink-soft);">${escHtml(fleetI18n.tr("By"))} ${escHtml(i.requestedBy)}</div>`:""}</td><td>${escHtml(rec.company||"—")}</td><td>${escHtml(rec.category||"—")}</td>
       <td class="mono-cell">${escHtml(rec.location||"—")}</td><td class="mono-cell">${escHtml(i.addedAt || i.removedAt || "—")}</td>
@@ -6578,6 +6578,17 @@ async function deletePurchaseRequest(stageKey, idx){
   disposePipeline[stageKey].splice(idx,1);
   [...(item.quotes||[]).map(q=>q.file).filter(Boolean), ...(item.photos||[])].forEach(f=>
     fetch("/api/files/" + encodeURIComponent(f.id), { method:"DELETE", credentials:"same-origin", headers:{ "X-Requested-With":"fleet-app" } }).catch(()=>{}));
+  disposeEditRef = "";
+  await persistDisposePipeline();
+  renderDispose();
+}
+/* Remove a row from New / Dispose only (the Compliance Register is not touched). */
+async function deleteDisposeItem(stageKey, idx){
+  if(currentRole!=="admin") return;
+  const item = (disposePipeline[stageKey]||[])[idx]; if(!item) return;
+  const name = dispRec(item).plate || item.plate || item.veh || "";
+  if(!confirm(fleetI18n.tr(`Delete ${name} from New / Dispose? The Compliance Register is not changed.`))) return;
+  disposePipeline[stageKey].splice(idx,1);
   disposeEditRef = "";
   await persistDisposePipeline();
   renderDispose();
