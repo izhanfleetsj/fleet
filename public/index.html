@@ -1132,10 +1132,33 @@ body:not(.is-admin) .admin-only{display:none !important;}
         <div class="panel">
           <div class="panel-head">
             <h3>Cost by Vehicle</h3>
+            <button class="btn ghost" onclick="toggleForm('costOdooPanel')">🔗 Odoo PO</button>
             <button class="btn ghost" onclick="toggleForm('costImportPanel')">📥 Import Excel / PDF</button>
             <button class="btn yellow" onclick="toggleForm('costEntryForm')">+ Key In Cost / Update Driver</button>
           </div>
           <span class="sub" style="font-size:11px;color:var(--ink-soft);display:block;margin-top:-8px;margin-bottom:14px;">143 kenderaan · dari Fleet Performance 2026.xlsx · <span style="color:var(--warn);">Wastage</span> = amaran idling berlebihan sahaja, tidak dikira dalam Total (kos minyak sebenar sudah termasuk dalam Fuel semasa refuel)</span>
+
+          <div class="panel" id="costOdooPanel" style="display:none;background:var(--panel-2);box-shadow:none;">
+            <div class="panel-head" style="margin-bottom:8px;"><h3 style="font-size:12.5px;">🔗 Odoo — Purchase Order Lines</h3>
+              <a class="btn ghost" style="margin-left:auto;padding:4px 10px;font-size:11px;" href="https://swisresources.odoo.com/web#action=1894&model=purchase.order.line&view_type=pivot&cids=1&menu_id=1296" target="_blank" rel="noopener">↗ Open Odoo report</a></div>
+            <ol style="font-size:11.5px;color:var(--ink-soft);margin:0 0 10px 18px;padding:0;line-height:1.6;">
+              <li>In Odoo, open the PO line <b>Pivot</b> (rows = vehicle → product, columns = month) and click <b>⬇ Download xlsx</b>.</li>
+              <li>Upload that file here. Each vehicle's PO amounts are split by month and by type: <b>Repair</b> (Upkeep, parts, tyre, labour, towing…), <b>Fuel</b>, <b>Insurance</b> (incl. stamp duty). Fixed assets, new vehicles and GPS are kept aside.</li>
+              <li>Upload the latest export any time — it <b>replaces</b> the previous Odoo data (no double counting).</li>
+            </ol>
+            <div class="form-row" style="grid-template-columns:1fr auto;align-items:end;margin-bottom:6px;">
+              <div><label>Odoo pivot export (.xlsx)</label><input type="file" id="odooFile" accept=".xlsx,.xls"></div>
+              <button class="btn yellow" onclick="importOdooPivot()">Import from Odoo file</button>
+            </div>
+            <div style="display:flex;flex-wrap:wrap;gap:14px;align-items:center;font-size:12px;margin:6px 0;">
+              <b>Use Odoo figures for:</b>
+              <label style="display:flex;gap:4px;align-items:center;text-transform:none;letter-spacing:0;font-size:12px;"><input type="checkbox" id="odooUseRepair" checked onchange="saveOdooUse()"> Repair (Upkeep)</label>
+              <label style="display:flex;gap:4px;align-items:center;text-transform:none;letter-spacing:0;font-size:12px;"><input type="checkbox" id="odooUseFuel" onchange="saveOdooUse()"> Fuel</label>
+              <label style="display:flex;gap:4px;align-items:center;text-transform:none;letter-spacing:0;font-size:12px;"><input type="checkbox" id="odooUseInsurance" onchange="saveOdooUse()"> Insurance</label>
+              <button type="button" class="btn ghost" style="padding:3px 9px;font-size:10.5px;margin-left:auto;color:var(--danger);" onclick="clearOdooPo()">✕ Remove Odoo data</button>
+            </div>
+            <div id="odooStatus" style="font-size:11.5px;color:var(--ink-soft);white-space:pre-line;"></div>
+          </div>
 
           <div class="panel" id="costImportPanel" style="display:none;background:var(--panel-2);box-shadow:none;">
             <div class="panel-head" style="margin-bottom:8px;"><h3 style="font-size:12.5px;">📥 Import Cost Data (Excel / PDF)</h3></div>
@@ -4301,6 +4324,118 @@ function toggleFreqDetail(idx){
   if(arrow) arrow.textContent = show ? "▾" : "▸";
 }
 
+/* ===================== ODOO PURCHASE ORDERS → COSTING =====================
+   The Odoo PO-line pivot (rows: vehicle → product, columns: months) is read into
+   { plates: { KEY: { plate, m: { "2026-10": {repair, fuel, insurance, other, lines} } } } }.
+   A new upload replaces the old data, so figures are never added twice. */
+const ODOO_KEY = "fleetOdooPo_v1";
+let odooPo = null;
+const ODOO_MONTHS = ["january","february","march","april","may","june","july","august","september","october","november","december"];
+function odooMonthName(ym){ const [y,m] = ym.split("-"); return `${ODOO_MONTHS[+m-1].charAt(0).toUpperCase()+ODOO_MONTHS[+m-1].slice(1)} ${y}`; }
+function odooCategory(product){
+  const p = String(product||"").toLowerCase();
+  if(/fuel/.test(p)) return "fuel";
+  if(/insurance|stamp duty|road ?tax/.test(p)) return "insurance";
+  if(/fixed asset|lorry\s*\(|\bgps\b|hiring|computer|vehicle purchase/.test(p)) return "other";
+  return "repair";   // upkeep of motor vehicles, parts, tyre, labour, towing, service…
+}
+async function loadOdooPo(){ try{ const r = await window.storage.get(ODOO_KEY, true); const v = r && JSON.parse(r.value); if(v && v.plates) odooPo = v; }catch(e){} }
+function odooPeriodMonths(){
+  const sel = (document.getElementById("cost_month")||{}).value || "";
+  if(!odooPo) return [];
+  if(/^\d{4}-\d{2}$/.test(sel)) return [sel];
+  if(/^Y\d{4}$/.test(sel)) return odooPo.months.filter(m=>m.startsWith(sel.slice(1)));
+  const y = APP_TODAY_ISO.slice(0,4), cur = APP_TODAY_ISO.slice(0,7);
+  return odooPo.months.filter(m=>m.startsWith(y) && m<=cur);
+}
+function odooPeriodLabel(){
+  const sel = (document.getElementById("cost_month")||{}).value || "";
+  if(/^\d{4}-\d{2}$/.test(sel)) return odooMonthName(sel);
+  if(/^Y\d{4}$/.test(sel)) return `Full year ${sel.slice(1)}`;
+  return `YTD ${APP_TODAY_ISO.slice(0,4)}`;
+}
+function odooVehicleSum(plate, months){
+  const out = { repair:0, fuel:0, insurance:0, other:0, lines:{} };
+  const v = odooPo && odooPo.plates[utilPlateKey(plate)]; if(!v) return out;
+  months.forEach(m=>{ const e = v.m[m]; if(!e) return; ["repair","fuel","insurance","other"].forEach(k=>out[k] += e[k]||0);
+    Object.entries(e.lines||{}).forEach(([k,a])=>{ if(odooCategory(k)==="repair") out.lines[k] = (out.lines[k]||0) + a; }); });
+  return out;
+}
+function parseOdooPivot(rows){
+  // header row: month names in the columns ("October 2026")
+  const mre = new RegExp(`^(${ODOO_MONTHS.join("|")})\\s+(\\d{4})$`, "i");
+  const hi = rows.findIndex(r=>r.filter(c=>mre.test(String(c).trim())).length >= 1);
+  if(hi<0) throw new Error("No month columns found — export the Odoo PO line Pivot with months as columns.");
+  const colMonth = {};
+  rows[hi].forEach((c,i)=>{ const m = String(c).trim().match(mre); if(m) colMonth[i] = `${m[2]}-${String(ODOO_MONTHS.indexOf(m[1].toLowerCase())+1).padStart(2,"0")}`; });
+  const indent = s => (String(s).match(/^\s*/)||[""])[0].length;
+  const labelRows = rows.slice(hi+1).filter(r=>String(r[0]).trim() && String(r[0]).trim().toLowerCase()!=="total");
+  const levels = [...new Set(labelRows.map(r=>indent(r[0])))].sort((a,b)=>a-b);
+  const plateLevel = levels[0], productLevel = levels[1];
+  const plates = {}; let cur = null;
+  const add = (rec, ym, product, amt) => { const e = rec.m[ym] = rec.m[ym] || { repair:0, fuel:0, insurance:0, other:0, lines:{} };
+    const cat = odooCategory(product); e[cat] = Math.round((e[cat] + amt)*100)/100; e.lines[product] = Math.round(((e.lines[product]||0) + amt)*100)/100; };
+  labelRows.forEach(r=>{
+    const label = String(r[0]).trim(), lvl = indent(r[0]);
+    if(lvl===plateLevel){ const key = utilPlateKey(label); cur = plates[key] = plates[key] || { plate: label, m:{}, hasChildren:false, own:{} };
+      Object.entries(colMonth).forEach(([i,ym])=>{ const v = Number(r[i]); if(v) cur.own[ym] = v; }); return; }
+    if(!cur || (productLevel!=null && lvl!==productLevel)) return;
+    cur.hasChildren = true;
+    Object.entries(colMonth).forEach(([i,ym])=>{ const v = Number(r[i]); if(v) add(cur, ym, label.replace(/\s*\(\d+\)$/,""), v); });
+  });
+  // a vehicle without product rows: its own monthly totals count as repair
+  Object.values(plates).forEach(p=>{ if(!p.hasChildren) Object.entries(p.own).forEach(([ym,v])=>add(p, ym, "Purchase order", v)); delete p.own; delete p.hasChildren; });
+  return { months: Object.values(colMonth).sort(), plates };
+}
+async function importOdooPivot(){
+  const f = document.getElementById("odooFile").files[0];
+  const st = document.getElementById("odooStatus");
+  if(!f){ st.textContent = "Please choose the Odoo export file first."; return; }
+  try{
+    const wb = XLSX.read(await f.arrayBuffer(), {type:"array"});
+    const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], {header:1, defval:"", raw:true});
+    const parsed = parseOdooPivot(rows);
+    const use = (odooPo && odooPo.use) || { repair:true, fuel:false, insurance:false };
+    // vehicles in Odoo that are in the register but not yet in Costing get a costing row
+    const unmatched = [];
+    Object.values(parsed.plates).forEach(p=>{
+      const key = utilPlateKey(p.plate);
+      if(costingData.some(c=>utilPlateKey(c.plate)===key)) return;
+      const d = complianceData.find(x=>utilPlateKey(x.plate)===key);
+      if(d){ const rec = createBlankCostingRecord(d.plate); rec.company = d.company; rec.vehicleType = d.category; rec.branch = d.location; }
+      else unmatched.push(p.plate);
+    });
+    odooPo = { ...parsed, use, fileName: f.name, importedAt: APP_TODAY_ISO.split("-").reverse().join("/"), unmatched };
+    await window.storage.set(ODOO_KEY, JSON.stringify(odooPo), true);
+    if(typeof persistCostingData==="function") await persistCostingData();
+    const tot = k => Object.values(parsed.plates).reduce((t,p)=>t+Object.values(p.m).reduce((a,e)=>a+(e[k]||0),0),0);
+    st.textContent = `✓ ${Object.keys(parsed.plates).length} vehicles · ${parsed.months.length} months (${odooMonthName(parsed.months[0])} – ${odooMonthName(parsed.months[parsed.months.length-1])})\n`
+      + `Repair RM ${Math.round(tot("repair")).toLocaleString()} · Fuel RM ${Math.round(tot("fuel")).toLocaleString()} · Insurance RM ${Math.round(tot("insurance")).toLocaleString()} · Kept aside (assets / GPS / hiring) RM ${Math.round(tot("other")).toLocaleString()}`
+      + (unmatched.length ? `\n⚠ Not in the register (not shown in Costing): ${unmatched.join(", ")}` : "");
+    populateCostingFilters(); renderCosting();
+  }catch(e){ console.warn(e); st.textContent = "✕ " + e.message; }
+}
+async function saveOdooUse(){
+  if(!odooPo) return;
+  odooPo.use = { repair: document.getElementById("odooUseRepair").checked, fuel: document.getElementById("odooUseFuel").checked, insurance: document.getElementById("odooUseInsurance").checked };
+  await window.storage.set(ODOO_KEY, JSON.stringify(odooPo), true);
+  renderCosting();
+}
+async function clearOdooPo(){
+  if(!odooPo || !confirm("Remove the imported Odoo PO data from Costing?")) return;
+  odooPo = null;
+  await window.storage.set(ODOO_KEY, "null", true);
+  const sel = document.getElementById("cost_month"); if(sel){ sel.innerHTML = ""; }
+  document.getElementById("odooStatus").textContent = "";
+  populateCostingFilters(); renderCosting();
+}
+function renderOdooStatus(){
+  const st = document.getElementById("odooStatus"); if(!st || !odooPo) return;
+  ["Repair","Fuel","Insurance"].forEach(k=>{ const el = document.getElementById("odooUse"+k); if(el) el.checked = !!(odooPo.use||{})[k.toLowerCase()]; });
+  if(!st.textContent) st.textContent = `Last import: ${odooPo.fileName||"Odoo"} · ${odooPo.importedAt||""} · ${Object.keys(odooPo.plates).length} vehicles, ${odooPo.months.length} months`
+    + (odooPo.unmatched && odooPo.unmatched.length ? `\n⚠ Not in the register: ${odooPo.unmatched.join(", ")}` : "");
+}
+
 /* ===================== 2. COSTING ===================== */
 let costCategoryChart, costTrendChart;
 function populateCostingFilters(){
@@ -4308,7 +4443,15 @@ function populateCostingFilters(){
   const types = [...new Set(costingData.map(d=>d.vehicleType))].sort();
   const branches = [...new Set(costingData.map(d=>d.branch))].sort();
   const monthSel = document.getElementById("cost_month");
-  if(monthSel && monthSel.options.length<=1){
+  if(monthSel && odooPo && odooPo.months && odooPo.months.length){
+    const keep = monthSel.value;
+    const years = [...new Set(odooPo.months.map(m=>m.slice(0,4)))].sort().reverse();
+    const yNow = APP_TODAY_ISO.slice(0,4);
+    monthSel.innerHTML = `<option value="">YTD ${yNow} (Jan – ${odooMonthName(APP_TODAY_ISO.slice(0,7))})</option>`
+      + years.filter(y=>y!==yNow).map(y=>`<option value="Y${y}">Full year ${y}</option>`).join("")
+      + odooPo.months.slice().reverse().map(m=>`<option value="${m}">${odooMonthName(m)}</option>`).join("");
+    if([...monthSel.options].some(o=>o.value===keep)) monthSel.value = keep;
+  }else if(monthSel && monthSel.options.length<=1){
     monthSel.innerHTML = `<option value="">Full YTD (Jan–Jul 2026)</option>` + monthlyTrend.map(m=>`<option value="${m.month}">${m.month} 2026</option>`).join("");
   }
 }
@@ -4331,6 +4474,12 @@ function costRowValues(c){
     toll: split(c.totalTollRM, me?me.toll:0, tot("totalTollRM")),
     wastage: split(c.totalWastageRM, me?me.wastage:0, tot("totalWastageRM")),
   };
+  // Odoo purchase orders (actual, per month) replace the chosen categories
+  if(odooPo){
+    const months = odooPeriodMonths(), v = odooVehicleSum(c.plate, months);
+    ["repair","fuel","insurance"].forEach(k=>{ if(odooPo.use && odooPo.use[k]) r[k] = v[k]; });
+    r.odooLines = v.lines;
+  }
   r.total = r.fuel + r.repair + r.insurance + r.toll;
   return r;
 }
@@ -4366,7 +4515,7 @@ function renderCostingTable(){
     const total = r.fuel + r.repair + r.insurance + r.toll;
     const wastageStyle = r.wastage > 0 ? `color:var(--warn);font-weight:600;` : `color:var(--ink-soft);`;
     return `<tr><td style="font-weight:600;">${escHtml(c.plate)}</td><td>${escHtml(c.company||"—")}</td><td>${escHtml(c.vehicleType||"—")}</td><td class="mono-cell">${escHtml(c.branch||"—")}</td><td>${escHtml(c.driverName||"—")}</td>
-    <td class="mono-cell">${Math.round(r.fuel).toLocaleString()}</td><td class="mono-cell">${Math.round(r.repair).toLocaleString()}</td>
+    <td class="mono-cell">${Math.round(r.fuel).toLocaleString()}</td><td class="mono-cell" ${r.odooLines && Object.keys(r.odooLines).length ? `title="${escHtml(Object.entries(r.odooLines).sort((a,b)=>b[1]-a[1]).map(([k,v])=>`${k}: RM ${Math.round(v).toLocaleString()}`).join("\n"))}" style="text-decoration:underline dotted;cursor:help;"` : ""}>${Math.round(r.repair).toLocaleString()}</td>
     <td class="mono-cell">${Math.round(r.insurance).toLocaleString()}</td><td class="mono-cell">${Math.round(r.toll).toLocaleString()}</td>
     <td class="mono-cell" style="${wastageStyle}" title="Amaran idling berlebihan — tidak termasuk dalam Total">${Math.round(r.wastage).toLocaleString()}</td>
     <td class="mono-cell" style="font-weight:600;">${Math.round(total).toLocaleString()}</td>
@@ -4390,13 +4539,18 @@ function renderCostingTable(){
   document.getElementById("costTotalUpkeep").textContent = rm(totalUpkeep);
   document.getElementById("costWastage").textContent = rm(totalWastage);
 
-  const periodLabel = monthEntry ? `${monthSel} 2026` : "Jan–Jul 2026";
+  const periodLabel = odooPo ? odooPeriodLabel() : monthEntry ? `${monthSel} 2026` : "Jan–Jul 2026";
   ["costFuelFoot","costRepairFoot","costOtherFoot","costTotalUpkeepFoot"].forEach(id=>{
     const el = document.getElementById(id); if(el) el.textContent = periodLabel;
   });
   document.getElementById("costSectionSub").textContent = monthEntry
     ? `Fleet operating cost — estimated split for ${monthSel} 2026 (source data is per-vehicle YTD, not monthly)`
     : "Fleet operating cost — real telematics data, YTD Jan–Jul 2026";
+  if(odooPo){
+    const used = ["repair","fuel","insurance"].filter(k=>odooPo.use && odooPo.use[k]).map(k=>({repair:"Repair",fuel:"Fuel",insurance:"Insurance"})[k]);
+    document.getElementById("costSectionSub").textContent = `Fleet operating cost — ${odooPeriodLabel()} · ${used.join(", ")} from Odoo PO (${odooPo.fileName||"Odoo"}, imported ${odooPo.importedAt||""})`;
+    document.getElementById("costMonthNote").textContent = `${used.join(", ")}: actual Odoo purchase orders for ${odooPeriodLabel()}. Other columns: existing data. Hover a Repair figure to see the PO items.`;
+  }else
   document.getElementById("costMonthNote").textContent = monthEntry
     ? `Setiap kenderaan untuk ${monthSel} dianggarkan (estimated): jumlah YTD kenderaan itu × nisbah bulan tersebut dalam trend fleet-wide sebenar — Excel asal cuma ada breakdown bulanan peringkat fleet, bukan peringkat kenderaan.`
     : "Pilih bulan untuk lihat anggaran cost bulan tersebut (fleet-wide sebenar; peringkat kenderaan adalah anggaran).";
@@ -4436,6 +4590,19 @@ function renderCostingTable(){
     ? `Filtered (${rows.length} vehicles) · estimated split (${(fuelShare*100).toFixed(0)}% of fleet fuel, ${(repairShare*100).toFixed(0)}% of fleet repair)`
     : "All vehicles · actual fleet-wide monthly data";
 
+  if(odooPo && odooPo.months && odooPo.months.length){
+    const ms = odooPo.months.slice(-12);
+    const plates = new Set(rows.map(c=>utilPlateKey(c.plate)));
+    const sumM = (m, k) => Object.entries(odooPo.plates).reduce((t,[key,v])=> t + (!isFiltered || plates.has(key) ? ((v.m[m]||{})[k]||0) : 0), 0);
+    document.getElementById("costTrendScope").textContent = (isFiltered ? `Filtered (${rows.length} vehicles)` : "All vehicles") + " · Odoo purchase orders, last 12 months";
+    if(costTrendChart) costTrendChart.destroy();
+    costTrendChart = new Chart(document.getElementById("chartCostTrend"),{ type:"line",
+      data:{labels:ms.map(m=>odooMonthName(m).slice(0,3)+" "+m.slice(2,4)),datasets:[
+        {label:fleetI18n.tr("Fuel"),data:ms.map(m=>Math.round(sumM(m,"fuel"))),borderColor:"#FDB913",backgroundColor:"#FDB913",tension:.3,pointRadius:ms.map(m=>m===monthSel?7:3)},
+        {label:fleetI18n.tr("Repair"),data:ms.map(m=>Math.round(sumM(m,"repair"))),borderColor:"#C1443C",backgroundColor:"#C1443C",tension:.3,pointRadius:ms.map(m=>m===monthSel?7:3)} ]},
+      options:{plugins:{legend:{position:"bottom",labels:{font:{family:"Inter",size:11}}}},scales:{y:{grid:{color:fleetI18n.cssVar("--grid")}},x:{grid:{display:false}}}} });
+    return;
+  }
   const selIdx = monthEntry ? monthlyTrend.findIndex(t=>t.month===monthSel) : -1;
   const ptRadius = monthlyTrend.map((t,i)=> i===selIdx ? 7 : 3);
   const ptFuelColor = monthlyTrend.map((t,i)=> i===selIdx ? "#7A5200" : "#FDB913");
@@ -4694,6 +4861,7 @@ async function importCostPdf(){
 
 function renderCosting(){
   populateCostingFilters();
+  renderOdooStatus();
   renderCostingTable();
   document.getElementById("ce_vehicle").innerHTML = costEntryVehicleOptions();
   onCostEntryVehicleChange();
@@ -7271,6 +7439,7 @@ fetch("/sw.js", {cache:"no-store"}).then(r=>r.text()).then(t=>{ const m = t.matc
   setSyncStatus("Menarik data terkini…");
   await loadComplianceRegister();
   await loadCostingData();
+  if(currentRole==="admin") await loadOdooPo();
   await loadFleetTarget();
   await loadUtilOverrides();
   await loadFleetContacts();
