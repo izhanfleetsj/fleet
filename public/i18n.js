@@ -328,7 +328,6 @@
     // ---- Hiring ----
     ["Log job request → assign (external hire / own vehicle) → reply confirmation","Log permintaan kerja → assign (sewa / kenderaan sendiri) → balas pengesahan"],
     ["Jobs This Month","Kerja Bulan Ini"],
-    ["Logged from WhatsApp requests","Dilog dari permintaan WhatsApp"],
     ["Not Yet Assigned","Belum Di-assign"],
     ["Awaiting reply","Menunggu balasan"],
     ["Assigned","Sudah Di-assign"],
@@ -511,7 +510,8 @@
     ["Totals (shown)","Jumlah (dipaparkan)"],
     ["Period","Tempoh"],
     ["Hire vs Own — by Item","Sewa vs Sendiri — ikut Item"],
-    ["Assigned units, counted per vehicle","Unit yang di-assign, dikira setiap kenderaan"],
+    ["This month's assigned jobs, counted per vehicle (a 2-unit job counts 2)","Job di-assign bulan ini, dikira setiap kenderaan (job 2 unit dikira 2)"],
+    ["Logged from WhatsApp requests","Dilog dari permintaan WhatsApp"],
     ["No assigned jobs yet","Belum ada job di-assign"],
     ["Hire","Sewa"],
     ["Own","Sendiri"],
@@ -920,6 +920,8 @@
   ];
 
   const TEMPLATES = [
+    ["Excluding {a} cancelled","Tidak termasuk {a} dibatalkan"],
+    ["{a} units from {b} assigned jobs","{a} unit dari {b} job di-assign"],
     ["Delete {a} from New / Dispose? The Compliance Register is not changed.","Padam {a} dari Baharu / Pelupusan? Daftar Pematuhan tidak diubah."],
     ["Insurance Register updated for {a} vehicle(s).","Daftar Insurans dikemas kini untuk {a} kenderaan."],
     ["Create {a} record(s) from the Insurance Register? NCD and Basic Premium still need to be filled in.","Cipta {a} rekod dari Daftar Insurans? NCD dan Premium Asas masih perlu diisi."],
