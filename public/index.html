@@ -1218,6 +1218,11 @@ body:not(.is-admin) .admin-only{display:none !important;}
           <div class="kpi"><div class="label">— Sewa vs Sendiri</div><div class="value mono" id="hireSourceSplit" style="font-size:19px;">—</div><div class="foot">Nisbah bulan ini</div></div>
         </div>
 
+        <div class="panel" id="hireByItemPanel">
+          <div class="panel-head"><h3>Hire vs Own — by Item</h3><span class="sub" style="font-size:11px;color:var(--ink-soft);margin-left:auto;">Assigned units, counted per vehicle</span></div>
+          <div id="hireByItem"></div>
+        </div>
+
         <div class="panel" id="assignPanel" style="display:none;">
           <div class="panel-head">
             <h3>Step 2 — Balas &amp; Assign Kenderaan</h3>
@@ -4711,6 +4716,24 @@ async function deleteHireRecord(index){
   renderOverview();
   await persistHiringRecords();
 }
+/* Assigned units split into hire (Sewa) and own fleet (Sendiri) for each item type. */
+function renderHireByItem(){
+  const el = document.getElementById("hireByItem"); if(!el) return;
+  const map = new Map();
+  hiringRecords.filter(h=>h.status!=="Cancelled").forEach(h=>{
+    const item = h.item || matchHireItem(h.unit||"").item || h.unit || "—";
+    hireAssignments(h).forEach(a=>{ const r = map.get(item) || {hire:0, own:0}; if(a.source==="Sewa") r.hire++; else r.own++; map.set(item, r); });
+  });
+  const rows = [...map.entries()].sort((a,b)=>(b[1].hire+b[1].own)-(a[1].hire+a[1].own));
+  if(!rows.length){ el.innerHTML = `<div style="font-size:12px;color:var(--faint);">${escHtml(fleetI18n.tr("No assigned jobs yet"))}</div>`; return; }
+  const tot = rows.reduce((t,[,r])=>({hire:t.hire+r.hire, own:t.own+r.own}), {hire:0, own:0});
+  const bar = r => { const n = r.hire + r.own || 1; return `<div style="display:flex;height:8px;border-radius:4px;overflow:hidden;background:var(--line);min-width:120px;"><div style="width:${r.hire/n*100}%;background:var(--yellow);"></div><div style="width:${r.own/n*100}%;background:var(--info);"></div></div>`; };
+  el.innerHTML = `<div class="fit-table" style="border:1px solid var(--line);border-radius:var(--radius);"><table>
+    <thead><tr><th>${escHtml(fleetI18n.tr("Item"))}</th><th style="text-align:right;">${escHtml(fleetI18n.tr("Hire"))}</th><th style="text-align:right;">${escHtml(fleetI18n.tr("Own"))}</th><th style="text-align:right;">${escHtml(fleetI18n.tr("Total"))}</th><th style="width:40%;"><span style="color:var(--yellow-deep);">■</span> ${escHtml(fleetI18n.tr("Hire"))} &nbsp; <span style="color:var(--info);">■</span> ${escHtml(fleetI18n.tr("Own"))}</th></tr></thead>
+    <tbody>${rows.map(([item,r])=>`<tr><td style="font-weight:600;">${escHtml(item)}</td><td class="mono-cell" style="text-align:right;">${r.hire}</td><td class="mono-cell" style="text-align:right;">${r.own}</td><td class="mono-cell" style="text-align:right;font-weight:600;">${r.hire+r.own}</td><td>${bar(r)}</td></tr>`).join("")}
+    <tr style="background:var(--panel-2);"><td style="font-weight:700;">${escHtml(fleetI18n.tr("Total"))}</td><td class="mono-cell" style="text-align:right;font-weight:700;">${tot.hire}</td><td class="mono-cell" style="text-align:right;font-weight:700;">${tot.own}</td><td class="mono-cell" style="text-align:right;font-weight:700;">${tot.hire+tot.own}</td><td>${bar(tot)}</td></tr>
+    </tbody></table></div>`;
+}
 function renderHiring(){
   document.getElementById("hireActiveCount").textContent = hiringRecords.length;
   document.getElementById("hirePendingCount").textContent = hiringRecords.filter(h=>h.status==="New").length;
@@ -4718,7 +4741,8 @@ function renderHiring(){
   const allUnits = hiringRecords.flatMap(hireAssignments);   // counted per unit
   const sewaCount = allUnits.filter(a=>a.source==="Sewa").length;
   const sendiriCount = allUnits.filter(a=>a.source==="Sendiri").length;
-  document.getElementById("hireSourceSplit").textContent = `${sendiriCount} / ${sewaCount}`;
+  document.getElementById("hireSourceSplit").textContent = `${sewaCount} / ${sendiriCount}`;   // hire / own, as labelled
+  renderHireByItem();
   renderHireTable();
 }
 /* Location text → safe HTML with clickable map links. A pasted Google Maps / Waze
