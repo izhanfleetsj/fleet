@@ -1244,7 +1244,7 @@ body:not(.is-admin) .admin-only{display:none !important;}
         </div>
 
         <div class="panel" id="hireByItemPanel">
-          <div class="panel-head"><h3>Hire vs Own — by Item</h3><span class="sub" style="font-size:11px;color:var(--ink-soft);margin-left:auto;">This month's assigned jobs, counted per vehicle (a 2-unit job counts 2)</span></div>
+          <div class="panel-head"><h3>Hire vs Own — by Item</h3><span class="sub" style="font-size:11px;color:var(--ink-soft);margin-left:auto;">This month's assigned jobs — jobs, and vehicles (units) sent</span></div>
           <div id="hireByItem"></div>
         </div>
 
@@ -4891,18 +4891,30 @@ function renderHireByItem(){
   const el = document.getElementById("hireByItem"); if(!el) return;
   const map = new Map();
   const jobs = hireThisMonth().filter(h=>h.status==="Assigned");
+  const multi = [];
   jobs.forEach(h=>{
     const item = h.item || matchHireItem(h.unit||"").item || h.unit || "—";
-    hireAssignments(h).forEach(a=>{ const r = map.get(item) || {hire:0, own:0}; if(a.source==="Sewa") r.hire++; else r.own++; map.set(item, r); });
+    const r = map.get(item) || {jobs:0, hire:0, own:0};
+    r.jobs++;
+    const asg = hireAssignments(h);
+    asg.forEach(a=>{ if(a.source==="Sewa") r.hire++; else r.own++; });
+    map.set(item, r);
+    if(asg.length > 1) multi.push({h, n: asg.length, hire: asg.filter(a=>a.source==="Sewa").length});
   });
-  const rows = [...map.entries()].sort((a,b)=>(b[1].hire+b[1].own)-(a[1].hire+a[1].own));
+  const rows = [...map.entries()].sort((a,b)=>b[1].jobs-a[1].jobs || (b[1].hire+b[1].own)-(a[1].hire+a[1].own));
   if(!rows.length){ el.innerHTML = `<div style="font-size:12px;color:var(--faint);">${escHtml(fleetI18n.tr("No assigned jobs yet"))}</div>`; return; }
-  const tot = rows.reduce((t,[,r])=>({hire:t.hire+r.hire, own:t.own+r.own}), {hire:0, own:0});
+  const tot = rows.reduce((t,[,r])=>({jobs:t.jobs+r.jobs, hire:t.hire+r.hire, own:t.own+r.own}), {jobs:0, hire:0, own:0});
+  const num = (v, bold) => `<td class="mono-cell" style="text-align:right;${bold?"font-weight:700;":""}">${v}</td>`;
   el.innerHTML = `<div class="fit-table" style="border:1px solid var(--line);border-radius:var(--radius);"><table>
-    <thead><tr><th>${escHtml(fleetI18n.tr("Item"))}</th><th style="text-align:right;">${escHtml(fleetI18n.tr("Hire"))}</th><th style="text-align:right;">${escHtml(fleetI18n.tr("Own"))}</th><th style="text-align:right;">${escHtml(fleetI18n.tr("Total"))}</th></tr></thead>
-    <tbody>${rows.map(([item,r])=>`<tr><td style="font-weight:600;">${escHtml(item)}</td><td class="mono-cell" style="text-align:right;">${r.hire}</td><td class="mono-cell" style="text-align:right;">${r.own}</td><td class="mono-cell" style="text-align:right;font-weight:600;">${r.hire+r.own}</td></tr>`).join("")}
-    <tr style="background:var(--panel-2);"><td style="font-weight:700;">${escHtml(fleetI18n.tr("Total"))}<div style="font-size:10px;font-weight:400;color:var(--ink-soft);">${escHtml(fleetI18n.tr(`${tot.hire+tot.own} units from ${jobs.length} assigned jobs`))}</div></td><td class="mono-cell" style="text-align:right;font-weight:700;">${tot.hire}</td><td class="mono-cell" style="text-align:right;font-weight:700;">${tot.own}</td><td class="mono-cell" style="text-align:right;font-weight:700;">${tot.hire+tot.own}</td></tr>
-    </tbody></table></div>`;
+    <thead><tr><th>${escHtml(fleetI18n.tr("Item"))}</th><th style="text-align:right;">${escHtml(fleetI18n.tr("Jobs"))}</th><th style="text-align:right;">${escHtml(fleetI18n.tr("Hire (units)"))}</th><th style="text-align:right;">${escHtml(fleetI18n.tr("Own (units)"))}</th><th style="text-align:right;">${escHtml(fleetI18n.tr("Total units"))}</th></tr></thead>
+    <tbody>${rows.map(([item,r])=>`<tr><td style="font-weight:600;">${escHtml(item)}</td>${num(r.jobs,true)}${num(r.hire)}${num(r.own)}${num(r.hire+r.own)}</tr>`).join("")}
+    <tr style="background:var(--panel-2);"><td style="font-weight:700;">${escHtml(fleetI18n.tr("Total"))}</td>${num(tot.jobs,true)}${num(tot.hire,true)}${num(tot.own,true)}${num(tot.hire+tot.own,true)}</tr>
+    </tbody></table></div>
+    <div style="font-size:11.5px;color:var(--ink-soft);margin-top:8px;line-height:1.6;">
+      ${escHtml(fleetI18n.tr(`Jobs ${tot.jobs} = the Assigned card. Units ${tot.hire+tot.own} = Hire ${tot.hire} + Own ${tot.own} (the Hire vs Own card).`))}
+      ${multi.length ? `<br>${escHtml(fleetI18n.tr(`${multi.length} job(s) needed more than one vehicle, so units are ${tot.hire+tot.own-tot.jobs} more than jobs:`))}
+        ${multi.map(m=>`<br>• ${escHtml(m.h.tarikh||"")} · ${escHtml(m.h.unit||m.h.item||"")} · ${escHtml(m.h.company||"")}${m.h.project&&m.h.project!=="—"?" / "+escHtml(m.h.project):""} — <b>${m.n}</b> ${escHtml(fleetI18n.tr("units"))} (${m.hire} ${escHtml(fleetI18n.tr("hire"))}, ${m.n-m.hire} ${escHtml(fleetI18n.tr("own"))})`).join("")}` : ""}
+    </div>`;
 }
 /* All hiring KPIs and the by-item table use the same set: this month's jobs, cancelled left out. */
 function hireThisMonth(){

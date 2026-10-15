@@ -518,6 +518,14 @@
     ["Hire","Sewa"],
     ["Own","Sendiri"],
     ["Total","Jumlah"],
+    ["Jobs","Job"],
+    ["Hire (units)","Sewa (unit)"],
+    ["Own (units)","Sendiri (unit)"],
+    ["Total units","Jumlah unit"],
+    ["units","unit"],
+    ["hire","sewa"],
+    ["own","sendiri"],
+    ["This month's assigned jobs — jobs, and vehicles (units) sent","Job di-assign bulan ini — bilangan job, dan kenderaan (unit) yang dihantar"],
     ["Pickup Location","Lokasi Ambil (Pickup)"],
     ["Drop-off Location","Lokasi Hantar (Drop-off)"],
     ["Delete this record","Padam rekod ini"],
@@ -922,6 +930,8 @@
   ];
 
   const TEMPLATES = [
+    ["Jobs {a} = the Assigned card. Units {b} = Hire {c} + Own {d} (the Hire vs Own card).","Job {a} = kad Assigned. Unit {b} = Sewa {c} + Sendiri {d} (kad Hire vs Own)."],
+    ["{a} job(s) needed more than one vehicle, so units are {b} more than jobs:","{a} job memerlukan lebih dari satu kenderaan, jadi unit lebih {b} dari bilangan job:"],
     ["Excluding {a} cancelled","Tidak termasuk {a} dibatalkan"],
     ["{a} units from {b} assigned jobs","{a} unit dari {b} job di-assign"],
     ["Delete {a} from New / Dispose? The Compliance Register is not changed.","Padam {a} dari Baharu / Pelupusan? Daftar Pematuhan tidak diubah."],
