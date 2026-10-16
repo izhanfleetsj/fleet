@@ -1294,6 +1294,7 @@ body:not(.is-admin) .admin-only{display:none !important;}
               <button class="btn ghost" onclick="document.getElementById('hireReplyWrap').style.display='none';">Close</button>
               <button class="btn yellow" onclick="copyHireReply()">📋 Copy Text</button>
               <button class="btn ghost" onclick="sendHireReplyWhatsApp()" title="Send the full summary to the supervisor who requested">📲 Supervisor</button>
+              <button class="btn yellow" style="background:#25D366;color:#fff;" onclick="sendHireReplyGroup()" title="Open WhatsApp with this message, then choose the group to send it to">👥 <span>WhatsApp Group</span></button>
             </div>
             <div id="hireDriverWaBtns" style="display:flex;flex-wrap:wrap;gap:8px;justify-content:flex-end;margin-top:8px;"></div>
             <div id="copyConfirm" style="font-size:11px;color:var(--good);margin-top:6px;display:none;">Copied — paste terus dalam WhatsApp.</div>
@@ -5725,6 +5726,15 @@ function sendHireReplyWhatsApp(){
   const text = document.getElementById("hireReplyText").value;
   if(!h.phone || h.phone==="—"){ A("Tiada no telefon Sv untuk request ni — tak boleh reply WhatsApp terus."); return; }
   openWhatsApp(h.phone, text);
+}
+
+/* WhatsApp links can only open a chat with a phone number — not a group. Without a number,
+   WhatsApp opens with the message ready and lets the user pick any chat or group to send it to. */
+function sendHireReplyGroup(){
+  const text = document.getElementById("hireReplyText").value;
+  if(!text) return;
+  try{ navigator.clipboard && navigator.clipboard.writeText(text); }catch(e){}
+  window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, "_blank");
 }
 
 /* ===================== 4. UTILIZATION ===================== */

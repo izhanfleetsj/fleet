@@ -571,6 +571,7 @@
     ["Purchase Order (PO) — if the job needs one, e.g. collecting premix","Purchase Order (PO) — jika job memerlukan PO, cth. ambil premix"],
     ["Upload (PDF / Photo)","Muat naik (PDF / Gambar)"],
     ["From branch","Dari branch"],
+    ["WhatsApp Group","WhatsApp Group"],
     ["Back Charge","Back Charge"],
     ["Upload Back Charge","Upload Back Charge"],
     ["Back charge pending","Back charge belum upload"],
