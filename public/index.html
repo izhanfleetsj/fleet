@@ -346,6 +346,7 @@ label{font-size:11px;font-weight:600;color:var(--ink-soft);text-transform:upperc
 .pipe-card .sold-form .btn{padding:3px 8px;font-size:10.5px;}
 
 .two-col-charts{display:grid;grid-template-columns:1fr 1fr;gap:20px;}
+.two-col-charts > *{min-width:0;}
 
 @media(max-width:1100px){
   .kpi-row{grid-template-columns:repeat(3,1fr);}
@@ -1130,6 +1131,19 @@ body:not(.is-admin) .admin-only{display:none !important;}
 
         <div class="kpi-row" id="opKpis" style="grid-template-columns:repeat(5,1fr);"></div>
 
+        <div class="two-col-charts" id="opCharts">
+          <div class="panel">
+            <div class="panel-head"><h3 id="opChartMonthTitle">Monthly Cost</h3></div>
+            <span class="sub" style="font-size:11px;color:var(--ink-soft);display:block;margin-top:-10px;margin-bottom:10px;">By item type · hover a bar for the amounts</span>
+            <div style="position:relative;height:280px;"><canvas id="chartOpMonth"></canvas></div>
+          </div>
+          <div class="panel">
+            <div class="panel-head"><h3 id="opChartTopTitle">Top 10 Vehicles</h3></div>
+            <span class="sub" style="font-size:11px;color:var(--ink-soft);display:block;margin-top:-10px;margin-bottom:10px;">Highest purchase-order total, by item type</span>
+            <div style="position:relative;height:280px;"><canvas id="chartOpTop"></canvas></div>
+          </div>
+        </div>
+
         <div class="panel">
           <div class="panel-head">
             <h3>Purchase Order Lines — by Vehicle</h3>
@@ -1140,7 +1154,7 @@ body:not(.is-admin) .admin-only{display:none !important;}
             </div>
           </div>
           <div class="form-row" style="grid-template-columns:repeat(6,1fr);align-items:end;margin-bottom:10px;">
-            <div><label>Period</label><select id="op_period" onchange="renderCosting()"></select></div>
+            <div><label>Year</label><select id="op_period" onchange="renderCosting()"></select></div>
             <div><label>Company</label><select id="op_company" onchange="renderCosting()"></select></div>
             <div><label>Branch</label><select id="op_branch" onchange="renderCosting()"></select></div>
             <div><label>Type</label><select id="op_type" onchange="renderCosting()"></select></div>
@@ -4866,11 +4880,18 @@ function opSetOptions(id, values, allLabel){
   el.innerHTML = `<option value="">${escHtml(allLabel)}</option>` + values.map(v=>`<option value="${escHtml(v)}">${escHtml(v)}</option>`).join("");
   if([...el.options].some(o=>o.value===keep)) el.value = keep;
 }
+/* Years in the file; the table always shows Jan – Dec of the chosen year. */
+function opYears(){ return odooPo ? [...new Set(odooPo.months.filter(m=>m!=="ALL").map(m=>m.slice(0,4)))].sort().reverse() : []; }
+function opYear(){
+  const sel = ((document.getElementById("op_period")||{}).value || "").replace(/^Y/,"");
+  const ys = opYears();
+  return ys.includes(sel) ? sel : ys.includes(APP_TODAY_ISO.slice(0,4)) ? APP_TODAY_ISO.slice(0,4) : (ys[0] || "");
+}
 function opMonths(){
   if(!odooPo) return [];
-  const sel = (document.getElementById("op_period")||{}).value || "";
-  if(/^Y\d{4}$/.test(sel)) return odooPo.months.filter(m=>m.startsWith(sel.slice(1)));
-  return odooPo.months.slice();
+  if(odooPo.totalOnly) return ["ALL"];
+  const y = opYear();
+  return Array.from({length:12}, (_,i)=>`${y}-${String(i+1).padStart(2,"0")}`);
 }
 function opMonthLabel(m){ return m==="ALL" ? (odooPo.periodLabel||"Total") : odooMonthName(m); }
 /* rows shown in the pivot, after filters: [{key, plate, info, items:[{name, m:{ym:amt}, total}], m:{ym:amt}, total}] */
@@ -4916,14 +4937,14 @@ function renderCosting(){
   const ps = document.getElementById("op_period");
   if(ps){
     const keep = ps.value;
-    const ms = odooPo ? odooPo.months : [];
-    const years = [...new Set(ms.filter(m=>m!=="ALL").map(m=>m.slice(0,4)))].sort().reverse();
     ps.innerHTML = (odooPo && odooPo.totalOnly) ? `<option value="">${escHtml(odooPo.periodLabel||"Total")}</option>`
-      : `<option value="">${ms.length ? escHtml(`All — ${opMonthLabel(ms[0])} – ${opMonthLabel(ms[ms.length-1])}`) : "—"}</option>` + years.map(y=>`<option value="Y${y}">${y}</option>`).join("");
+      : opYears().map(y=>`<option value="Y${y}">${y} (Jan – Dec)</option>`).join("") || `<option value="">—</option>`;
     if([...ps.options].some(o=>o.value===keep)) ps.value = keep;
+    else if(odooPo && !odooPo.totalOnly) ps.value = "Y" + opYear();
   }
   if(!odooPo){
     if(kp) kp.innerHTML = "";
+    const ch = document.getElementById("opCharts"); if(ch) ch.style.display = "none";
     wrap.innerHTML = `<div style="padding:24px;text-align:center;color:var(--faint);">${escHtml(fleetI18n.tr("No Odoo data yet — admin: upload the Odoo PO line pivot (xlsx) above."))}</div>`;
     document.getElementById("opCount").textContent = "";
     return;
@@ -4959,8 +4980,46 @@ function renderCosting(){
   });
   if(!rows.length) html += `<tr><td colspan="${months.length+2}" style="padding:16px;text-align:center;color:var(--faint);">${escHtml(fleetI18n.tr("No purchase orders match the filters"))}</td></tr>`;
   wrap.innerHTML = html + "</tbody></table>";
+  renderOpCharts(months, rows);
   document.getElementById("opCount").textContent = `${rows.length} / ${Object.keys(odooPo.plates).length} ${fleetI18n.tr("vehicles")} · ${odooPo.fileName||"Odoo"} · ${fleetI18n.tr("imported")} ${odooPo.importedAt||""}`;
   document.getElementById("costSectionSub").textContent = `Odoo purchase order lines — ${period}`;
+}
+/* Charts: monthly stacked bars and top-10 vehicles, by item type. Palette checked with the
+   dataviz validator for light and dark (fixed order fuel → insurance → repair → assets). */
+const OP_TYPES = ["fuel","insurance","repair","other"];
+const OP_COLORS = { light:{fuel:"#C98F00", insurance:"#2F6FA3", repair:"#C1443C", other:"#7A5BB5"},
+                    dark:{fuel:"#B88300", insurance:"#4F8CC4", repair:"#D9534A", other:"#9A7BD0"} };
+let opMonthChart = null, opTopChart = null;
+function renderOpCharts(months, rows){
+  const box = document.getElementById("opCharts"); if(!box || typeof Chart==="undefined") return;
+  box.style.display = "";
+  const dark = document.documentElement.getAttribute("data-theme")==="dark";
+  const col = OP_COLORS[dark ? "dark" : "light"], surface = fleetI18n.cssVar("--panel") || (dark ? "#1B1D1F" : "#FFFFFF");
+  const ink = fleetI18n.cssVar("--ink-soft") || "#666", grid = fleetI18n.cssVar("--grid") || "rgba(0,0,0,.08)";
+  const label = k => fleetI18n.tr(ODOO_TYPE_LABEL[k]);
+  const byType = (r, m) => { const o = {fuel:0,insurance:0,repair:0,other:0}; r.items.forEach(i=>{ const v = m ? (i.m[m]||0) : i.total; o[odooCategory(i.name)] += v; }); return o; };
+  const ds = (data) => OP_TYPES.map((k,j)=>({ label: label(k), data: data.map(d=>Math.round(d[k]*100)/100), backgroundColor: col[k],
+    borderColor: surface, borderWidth: {top:2, left:0, right:0, bottom:0}, borderRadius: 4, borderSkipped: false, maxBarThickness: 34, stack: "s" }));
+  const money = v => "RM " + Math.round(v).toLocaleString();
+  const tip = { mode:"index", intersect:false, callbacks:{ label: c => `${c.dataset.label}: ${money(c.parsed[c.chart.options.indexAxis==="y"?"x":"y"])}`,
+    footer: items => "Total: " + money(items.reduce((t,c)=>t + (c.parsed[c.chart.options.indexAxis==="y"?"x":"y"]||0), 0)) } };
+  const common = { responsive:true, maintainAspectRatio:false, animation:false,
+    plugins:{ legend:{ position:"bottom", labels:{ color:ink, boxWidth:12, font:{family:"Inter", size:11} } }, tooltip: tip } };
+  const y = opYear();
+  document.getElementById("opChartMonthTitle").textContent = `${fleetI18n.tr("Monthly Cost")} — ${odooPo.totalOnly ? (odooPo.periodLabel||"") : y}`;
+  document.getElementById("opChartTopTitle").textContent = `${fleetI18n.tr("Top 10 Vehicles")} — ${odooPo.totalOnly ? (odooPo.periodLabel||"") : y}`;
+  const mData = months.map(m=>{ const o = {fuel:0,insurance:0,repair:0,other:0}; rows.forEach(r=>{ const b = byType(r, m); OP_TYPES.forEach(k=>o[k] += b[k]); }); return o; });
+  if(opMonthChart) opMonthChart.destroy();
+  opMonthChart = new Chart(document.getElementById("chartOpMonth"), { type:"bar",
+    data:{ labels: months.map(m=>m==="ALL" ? (odooPo.periodLabel||"Total") : odooMonthName(m).slice(0,3)), datasets: ds(mData) },
+    options:{ ...common, scales:{ x:{ stacked:true, grid:{display:false}, ticks:{color:ink} },
+      y:{ stacked:true, grid:{color:grid}, border:{display:false}, ticks:{ color:ink, callback: v => v>=1000 ? (v/1000).toLocaleString()+"k" : v } } } } });
+  const top = rows.slice().sort((a,b)=>b.total-a.total).slice(0,10);
+  if(opTopChart) opTopChart.destroy();
+  opTopChart = new Chart(document.getElementById("chartOpTop"), { type:"bar",
+    data:{ labels: top.map(r=>r.plate), datasets: ds(top.map(r=>byType(r))).map(d=>({...d, borderWidth:{right:2, top:0, left:0, bottom:0}, maxBarThickness:18})) },
+    options:{ ...common, indexAxis:"y", scales:{ y:{ stacked:true, grid:{display:false}, ticks:{color:ink, font:{size:11}} },
+      x:{ stacked:true, grid:{color:grid}, border:{display:false}, ticks:{ color:ink, callback: v => v>=1000 ? (v/1000).toLocaleString()+"k" : v } } } } });
 }
 function opToggle(key){ if(opOpen.has(key)) opOpen.delete(key); else opOpen.add(key); renderCosting(); }
 function opExpandAll(on){ opOpen.clear(); if(on) opRows().forEach(r=>opOpen.add(r.key)); renderCosting(); }
