@@ -5023,10 +5023,10 @@ function renderHireTable(){
     const svLine = !h.sv || h.sv==="—" ? "—" : `${h.sv}${h.phone && h.phone!=="—" ? " ("+h.phone+")" : ""}`;
     let vehCell = "—";
     if(h.status==="Assigned" || (h.status==="Cancelled" && hireAssignments(h).length)){
-      vehCell = hireAssignments(h).map(a=>{
+      vehCell = hireAssignments(h).map((a,k)=>{
         const srcBadge = a.source==="Sendiri" ? badge(T("Sendiri"),"info") : badge(T("Sewa"),"hire");
         const drv = a.driverName && a.driverName!=="—" ? `${escHtml(a.driverName)} ${a.driverPhone && a.driverPhone!=="—" ? "("+escHtml(a.driverPhone)+")" : ""}` : "";
-        return `<div style="margin-bottom:5px;">${escHtml(a.vehicle)} ${srcBadge}${drv?`<br><span style="font-size:11px;color:var(--ink-soft);">${drv}</span>`:""}</div>`;
+        return `<div style="margin-bottom:5px;">${escHtml(a.vehicle)} ${srcBadge}${drv?`<br><span style="font-size:11px;color:var(--ink-soft);">${drv}</span>`:""}${backChargeHtml(h, a, k)}</div>`;
       }).join("");
     }
     const actionCell = h.status==="New" ? `<button class="btn yellow" style="padding:5px 11px;font-size:11.5px;" onclick="openAssignPanel(${i})">${T("Balas / Assign")}</button>` : `<button class="btn ghost" style="padding:5px 11px;font-size:11.5px;" onclick="openAssignPanel(${i})">${T("Edit")}</button>`;
@@ -5042,6 +5042,60 @@ function renderHireTable(){
   renderReqStatus();
   const clr = document.getElementById("hireClearAllBtn");
   if(clr) clr.style.display = xlAnyActive("hiring") ? "inline-block" : "none";
+}
+/* ---- Back charge: an own-fleet vehicle sent to a job of another branch. The lending branch
+   charges the requesting branch, so admin uploads the signed back-charge form (PDF / photo)
+   against that unit. Stored on the assignment as a.bcFile (admin-only file, "bc-" id). ---- */
+function hireVehicleBranch(a){
+  const plate = String(a && a.vehicle || "").split(" — ")[0].trim().toUpperCase();
+  const d = plate && complianceData.find(v=>String(v.plate||"").trim().toUpperCase()===plate);
+  const b = d ? locationBranch(d.location) : "";
+  return b && b!=="—" ? b : "";
+}
+function needsBackCharge(h, a){
+  if(!a || a.source!=="Sendiri" || !h.branch) return false;
+  const vb = hireVehicleBranch(a);
+  return !!vb && vb!==h.branch;
+}
+function backChargeHtml(h, a, k){
+  if(!needsBackCharge(h, a)) return "";
+  const from = `<span style="font-size:10.5px;color:var(--ink-soft);">${escHtml(fleetI18n.tr("From branch"))} <b>${escHtml(hireVehicleBranch(a))}</b> → ${escHtml(h.branch)}</span>`;
+  if(a.bcFile){
+    const rm = currentRole==="admin" ? ` <button type="button" class="btn ghost" style="padding:1px 6px;font-size:10px;color:var(--danger);" title="${escHtml(fleetI18n.tr("Remove back charge form"))}" onclick="removeBackCharge('${escHtml(h.uid||"")}',${k})">✕</button>` : "";
+    return `<div style="margin-top:3px;">${from}<br><a class="map-link" href="/api/files/${encodeURIComponent(a.bcFile.id)}" target="_blank" rel="noopener">📄 ${escHtml(fleetI18n.tr("Back Charge"))}</a>${rm}</div>`;
+  }
+  const up = currentRole==="admin" ? `<label class="btn ghost" style="cursor:pointer;padding:2px 8px;font-size:10.5px;">📎 <span>${escHtml(fleetI18n.tr("Upload Back Charge"))}</span><input type="file" accept="application/pdf,image/*" style="display:none" onchange="uploadBackCharge('${escHtml(h.uid||"")}',${k},this.files[0]); this.value='';"></label>` : "";
+  return `<div style="margin-top:3px;">${from}<br>${badge(fleetI18n.tr("Back charge pending"),"warn")} ${up}</div>`;
+}
+async function uploadBackCharge(uid, k, file){
+  if(!file) return;
+  try{
+    try{ file = await prShrinkImage(file); }catch(e){}
+    const type = file.type==="application/pdf" ? "application/pdf" : /png/.test(file.type) ? "image/png" : /webp/.test(file.type) ? "image/webp" : /jpe?g/.test(file.type) ? "image/jpeg" : "";
+    if(!type) throw new Error(fleetI18n.tr("Only PDF or image files (JPG / PNG) are accepted."));
+    if(file.size > 4*1024*1024) throw new Error(fleetI18n.tr("File is too large (max 4 MB). Please reduce the file size and try again."));
+    const rnd = Array.from(crypto.getRandomValues(new Uint8Array(16)), b=>(b%36).toString(36)).join("") + Date.now().toString(36);
+    const id = `bc-${rnd.slice(0,28)}${{"application/pdf":".pdf","image/png":".png","image/webp":".webp","image/jpeg":".jpg"}[type]}`;
+    const r = await fetch("/api/files/" + encodeURIComponent(id), { method:"PUT", credentials:"same-origin",
+      headers:{ "Content-Type":type, "X-Requested-With":"fleet-app" }, body:file });
+    if(!r.ok){ let m = "HTTP " + r.status; try{ m = (await r.json()).error || m; }catch(e){} throw new Error(m); }
+    await setBackCharge(uid, k, { id, type, name:file.name, uploadedAt:new Date().toISOString() });
+  }catch(err){ A(err.message); }
+}
+async function setBackCharge(uid, k, bcFile){
+  await loadHiringRecords();          // latest copy first, so other edits are kept
+  const h = hiringRecords.find(x=>x.uid===uid);
+  if(!h){ A(fleetI18n.tr("This job could not be found — it may have been deleted by admin.")); renderHiring(); return; }
+  const list = hireAssignments(h).map(a=>({...a}));
+  if(!list[k]){ renderHiring(); return; }
+  if(bcFile) list[k].bcFile = bcFile; else delete list[k].bcFile;
+  h.assignments = list;
+  await persistHiringRecords();
+  renderHiring();
+}
+function removeBackCharge(uid, k){
+  if(!confirm(fleetI18n.tr("Remove the back charge form from this unit?"))) return;
+  setBackCharge(uid, k, null);
 }
 /* ---- Job request Item / Company pickers ----
    Company list = companies in the Compliance Register, so requesters pick instead of
@@ -5560,7 +5614,7 @@ function openAssignPanel(index){
   document.getElementById("as_sv").value = h.sv;
   document.getElementById("as_sv_phone").value = h.phone;
   const qty = parseInt(h.qty,10) || parseInt((String(h.unit||"").match(/^\s*(\d+)\b/)||[])[1],10) || 1;
-  assignDraft = hireAssignments(h).map(a=>({source:a.source||"Sendiri", vehicle:a.vehicle||"", search:"", driverName:a.driverName&&a.driverName!=="—"?a.driverName:"", driverPhone:a.driverPhone&&a.driverPhone!=="—"?a.driverPhone:""}));
+  assignDraft = hireAssignments(h).map(a=>({source:a.source||"Sendiri", vehicle:a.vehicle||"", bcFile:a.bcFile||null, bcVehicle:a.vehicle||"", search:"", driverName:a.driverName&&a.driverName!=="—"?a.driverName:"", driverPhone:a.driverPhone&&a.driverPhone!=="—"?a.driverPhone:""}));
   while(assignDraft.length < qty) assignDraft.push(blankAssignRow());
   renderAssignRows();
   document.getElementById("hireReplyWrap").style.display = "none";
@@ -5578,7 +5632,8 @@ async function generateAssignReply(){
     source: r.source,
     vehicle: r.source==="Sendiri" ? r.vehicle : (normText(r.vehicle.trim()) || "TBD"),
     driverName: normText(r.driverName.trim()) || "—",
-    driverPhone: r.driverPhone.trim() || "—"
+    driverPhone: r.driverPhone.trim() || "—",
+    ...(r.bcFile && r.source==="Sendiri" && r.vehicle===r.bcVehicle ? {bcFile:r.bcFile} : {})   // keep the back-charge form while the unit is unchanged
   }));
   const missing = rows.findIndex(r=>r.source==="Sendiri" && !r.vehicle);
   if(missing>-1){ A(fleetI18n.tr(`Please select a vehicle for unit ${missing+1}.`)); return; }
