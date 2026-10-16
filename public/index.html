@@ -409,7 +409,7 @@ body:not(.is-admin) .admin-only{display:none !important;}
 .cal-hol i{font-weight:500;font-style:normal;opacity:.8;}
 .hol-br{display:flex;flex-wrap:wrap;gap:2px 4px;}
 .cal-legend{display:flex;gap:8px;align-items:center;margin-top:8px;font-size:11px;color:var(--ink-soft);}
-@media (max-width:700px){ .cal-table td{height:70px;} .cal-chip{font-size:9px;} }
+@media (max-width:700px){ .panel table.cal-table{display:table;white-space:normal;} .cal-table td{height:70px;} .cal-table th{font-size:9px;padding:3px 1px;} .cal-chip{font-size:8px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%;box-sizing:border-box;} }
 /* Wide registers: fit the panel width instead of scrolling sideways (phones still scroll). */
 .fit-table th,.fit-table td{padding-left:5px;padding-right:5px;font-size:11.5px;overflow-wrap:break-word;}
 .fit-table .btn{white-space:normal;line-height:1.25;}
@@ -499,6 +499,29 @@ body:not(.is-admin) .admin-only{display:none !important;}
   .section-plate .sub{margin-left:0;width:100%;}
   .panel table{display:block;overflow-x:auto;white-space:nowrap;}
   input,select,textarea{font-size:16px;} /* stops iOS zoom-on-focus */
+}
+/* ---- Phone: tables become stacked cards (one card per row, "Label : value" lines) so a
+   page fits the screen width with no sideways scrolling. Labels come from the table header
+   (mobileCardTables). Filter headers stay as a row of chips above the cards. ---- */
+@media(max-width:700px){
+  .panel table.m-cards{display:block;overflow:visible;white-space:normal;border:none;}
+  table.m-cards > thead{display:none;}
+  table.m-cards.has-xl > thead{display:block;margin-bottom:8px;}
+  table.m-cards.has-xl > thead tr{display:flex;flex-wrap:wrap;gap:5px;}
+  table.m-cards.has-xl > thead th{display:block;border:1px solid var(--line);border-radius:12px;padding:3px 8px;background:var(--panel-2);font-size:10px;white-space:nowrap;position:static;}
+  table.m-cards.has-xl > thead th:empty{display:none;}
+  table.m-cards.has-xl > thead tr:not(:last-child){display:none;}
+  table.m-cards > tbody, table.m-cards > tfoot{display:block;}
+  table.m-cards > tbody > tr, table.m-cards > tfoot > tr{display:block;border:1px solid var(--line);border-radius:var(--radius);padding:8px 11px;margin-bottom:9px;background:var(--panel);}
+  table.m-cards > tbody > tr > td, table.m-cards > tfoot > tr > td, table.m-cards > tbody > tr > th{display:block;border:none !important;padding:4px 0 !important;text-align:right !important;white-space:normal !important;min-height:0;width:auto !important;max-width:none !important;}
+  table.m-cards > tbody > tr > td + td{border-top:1px dashed var(--line) !important;}
+  table.m-cards td[data-label]::before{content:attr(data-label);float:left;margin-right:12px;max-width:42%;text-align:left;font:600 10px 'Inter',sans-serif;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-soft);padding-top:2px;}
+  table.m-cards > tbody > tr > td::after, table.m-cards > tfoot > tr > td::after{content:"";display:block;clear:both;}
+  table.m-cards td input, table.m-cards td select{max-width:58%;}
+  table.m-cards > tbody > tr > td:first-child{font-size:14px;font-weight:700;text-align:left !important;}
+  table.m-cards > tbody > tr > td:first-child::before{display:none;}
+  table.m-cards td[colspan]{display:block;text-align:center !important;}
+  table.m-cards td[colspan]::before{display:none;}
 }
 </style>
 </head>
@@ -5215,6 +5238,37 @@ function applyWaPaste(){
   status.textContent = msg;
   if(!fields.branch) document.getElementById("hr_branch").focus();
 }
+/* Phone card layout for tables: tag each data table and copy its header text onto every cell
+   as data-label (see the m-cards CSS). Re-runs whenever tables are re-rendered. */
+const M_CARD_SKIP = ".cal-table, .ic-kv, .ic-grid, .no-mcard";
+function mobileCardTables(){
+  document.querySelectorAll(".content table").forEach(t=>{
+    if(t.matches(M_CARD_SKIP)) return;
+    const hr = t.tHead && t.tHead.rows.length ? t.tHead.rows[t.tHead.rows.length-1] : null;
+    if(!hr || hr.cells.length < 3) return;
+    const labels = [];
+    [...hr.cells].forEach(th=>{
+      const span = th.querySelector(".xl-th > span");
+      const txt = (span ? span.textContent : th.textContent).replace(/[▾↑↓⛉✎]/g,"").replace(/\s+/g," ").trim();
+      for(let k=0;k<(th.colSpan||1);k++) labels.push(txt);
+    });
+    t.classList.add("m-cards");
+    t.classList.toggle("has-xl", !!hr.querySelector(".xl-btn"));
+    [...t.tBodies, ...(t.tFoot ? [t.tFoot] : [])].forEach(tb=>[...tb.rows].forEach(tr=>{
+      let c = 0;
+      [...tr.cells].forEach(td=>{
+        if(td.colSpan > 1 && tr.cells.length===1){ c += td.colSpan; return; }
+        const l = labels[c] || "";
+        if(td.getAttribute("data-label")!==l) td.setAttribute("data-label", l);
+        c += td.colSpan || 1;
+      });
+    }));
+  });
+}
+let mCardQueued = false;
+new MutationObserver(()=>{ if(mCardQueued) return; mCardQueued = true; requestAnimationFrame(()=>{ mCardQueued = false; mobileCardTables(); }); })
+  .observe(document.documentElement, {childList:true, subtree:true});
+
 document.addEventListener("DOMContentLoaded", ()=>{
   const ta = document.getElementById("waPasteText");
   if(ta) ta.addEventListener("paste", ()=>setTimeout(applyWaPaste, 0));   // fill immediately on paste
