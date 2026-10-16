@@ -1182,6 +1182,7 @@ body:not(.is-admin) .admin-only{display:none !important;}
               <button type="button" class="btn ghost" style="padding:3px 9px;font-size:10.5px;margin-left:auto;color:var(--danger);" onclick="clearOdooPo()">✕ Remove Odoo data</button>
             </div>
             <div id="odooStatus" style="font-size:11.5px;color:var(--ink-soft);white-space:pre-line;"></div>
+            <div id="odooItems"></div>
           </div>
 
           <div class="panel" id="costImportPanel" style="display:none;background:var(--panel-2);box-shadow:none;">
@@ -4381,12 +4382,74 @@ function odooPeriodLabel(){
   if(/^Y\d{4}$/.test(sel)) return `Full year ${sel.slice(1)}`;
   return `YTD ${APP_TODAY_ISO.slice(0,4)}`;
 }
+/* Each Odoo product line ("[Fleet] Fuel", "Stamp Duty", "GPS SYSTEM"…) can be ticked on/off and
+   put under Repair, Fuel or Insurance by admin (odooPo.items). Default: the automatic category,
+   ticked — except assets / GPS / hiring ("other"), which start unticked. */
+function odooItemCfg(product){
+  const auto = odooCategory(product);
+  const c = odooPo && odooPo.items && odooPo.items[product];
+  return { on: c ? !!c.on : auto!=="other", cat: (c && c.cat) || (auto==="other" ? "repair" : auto), auto };
+}
+function odooEntrySplit(e, out, lines){
+  Object.entries((e && e.lines) || {}).forEach(([k,a])=>{
+    const c = odooItemCfg(k);
+    if(!c.on){ out.other += a; return; }
+    out[c.cat] += a;
+    if(lines && c.cat==="repair") lines[k] = (lines[k]||0) + a;
+  });
+  return out;
+}
 function odooVehicleSum(plate, months){
   const out = { repair:0, fuel:0, insurance:0, other:0, lines:{} };
   const v = odooPo && odooPo.plates[utilPlateKey(plate)]; if(!v) return out;
-  months.forEach(m=>{ const e = v.m[m]; if(!e) return; ["repair","fuel","insurance","other"].forEach(k=>out[k] += e[k]||0);
-    Object.entries(e.lines||{}).forEach(([k,a])=>{ if(odooCategory(k)==="repair") out.lines[k] = (out.lines[k]||0) + a; }); });
+  months.forEach(m=>odooEntrySplit(v.m[m], out, out.lines));
   return out;
+}
+/* All product lines in the imported file, with their total over every vehicle and month. */
+function odooItemList(){
+  const tot = {};
+  if(odooPo) Object.values(odooPo.plates).forEach(v=>Object.values(v.m).forEach(e=>Object.entries(e.lines||{}).forEach(([k,a])=>tot[k] = (tot[k]||0) + a)));
+  return Object.entries(tot).map(([name,amt])=>({name, amt, ...odooItemCfg(name)})).sort((a,b)=>b.amt-a.amt);
+}
+const ODOO_CAT_LABEL = { repair:"Repair", fuel:"Fuel", insurance:"Insurance" };
+function renderOdooItems(){
+  const w = document.getElementById("odooItems"); if(!w) return;
+  if(!odooPo){ w.innerHTML = ""; return; }
+  const list = odooItemList();
+  const groups = ["repair","fuel","insurance"].map(cat=>({cat, items:list.filter(i=>i.cat===cat)}));
+  const sumOn = cat => list.filter(i=>i.on && i.cat===cat).reduce((t,i)=>t+i.amt,0);
+  const nOn = list.filter(i=>i.on).length;
+  const row = i => `<tr style="${i.on?"":"opacity:.55;"}">
+      <td style="width:26px;text-align:center;"><input type="checkbox" ${i.on?"checked":""} onchange="setOdooItem(${escHtml(JSON.stringify(i.name))}, {on:this.checked})"></td>
+      <td>${escHtml(i.name)}${i.auto==="other"?` <span style="font-size:10px;color:var(--ink-soft);">(${escHtml(fleetI18n.tr("asset / GPS / hiring"))})</span>`:""}</td>
+      <td class="mono-cell" style="text-align:right;white-space:nowrap;">${Math.round(i.amt).toLocaleString()}</td>
+      <td style="width:120px;"><select style="font-size:11px;padding:2px 4px;" onchange="setOdooItem(${escHtml(JSON.stringify(i.name))}, {cat:this.value})">${Object.entries(ODOO_CAT_LABEL).map(([k,l])=>`<option value="${k}"${k===i.cat?" selected":""}>${escHtml(fleetI18n.tr(l))}</option>`).join("")}</select></td></tr>`;
+  w.innerHTML = `<details${w.dataset.open==="1"?" open":""} ontoggle="this.parentNode.dataset.open=this.open?'1':''" style="margin-top:6px;">
+    <summary style="cursor:pointer;font-size:12px;font-weight:600;">${escHtml(fleetI18n.tr("Odoo items"))} — ${nOn} / ${list.length} ${escHtml(fleetI18n.tr("selected"))}</summary>
+    <div style="font-size:11px;color:var(--ink-soft);margin:6px 0;">${escHtml(fleetI18n.tr("Tick the Odoo items to count in Costing, and choose the column each one goes to. Unticked items are left out."))}</div>
+    <div style="max-height:440px;overflow:auto;border:1px solid var(--line);border-radius:var(--radius);">
+    <table class="no-mcard" style="width:100%;font-size:11.5px;"><thead><tr><th></th><th>${escHtml(fleetI18n.tr("Item"))}</th><th style="text-align:right;">RM</th><th>${escHtml(fleetI18n.tr("Column"))}</th></tr></thead>
+    <tbody>${groups.map(g=>`<tr style="background:var(--panel-2);"><td colspan="4" style="font-weight:700;">${escHtml(fleetI18n.tr(ODOO_CAT_LABEL[g.cat]))} — RM ${Math.round(sumOn(g.cat)).toLocaleString()} <span style="font-weight:400;color:var(--ink-soft);">(${g.items.filter(i=>i.on).length} / ${g.items.length})</span>
+        <span style="float:right;"><button type="button" class="btn ghost" style="padding:1px 7px;font-size:10px;" onclick="setOdooGroup('${g.cat}',true)">${escHtml(fleetI18n.tr("All"))}</button>
+        <button type="button" class="btn ghost" style="padding:1px 7px;font-size:10px;" onclick="setOdooGroup('${g.cat}',false)">${escHtml(fleetI18n.tr("None"))}</button></span></td></tr>
+      ${g.items.map(row).join("")}`).join("")}</tbody></table></div></details>`;
+}
+async function saveOdooItems(){
+  await window.storage.set(ODOO_KEY, JSON.stringify(odooPo), true);
+  renderCosting();
+}
+function setOdooItem(name, patch){
+  if(!odooPo) return;
+  odooPo.items = odooPo.items || {};
+  const c = odooItemCfg(name);
+  odooPo.items[name] = { on: patch.on!=null ? patch.on : c.on, cat: patch.cat || c.cat };
+  saveOdooItems();
+}
+function setOdooGroup(cat, on){
+  if(!odooPo) return;
+  odooPo.items = odooPo.items || {};
+  odooItemList().filter(i=>i.cat===cat).forEach(i=>odooPo.items[i.name] = { on, cat });
+  saveOdooItems();
 }
 function parseOdooPivot(rows){
   // header row: month names in the columns ("October 2026")
@@ -4449,12 +4512,13 @@ async function importOdooPivot(){
       if(d){ const rec = createBlankCostingRecord(d.plate); rec.company = d.company; rec.vehicleType = d.category; rec.branch = d.location; }
       else unmatched.push(p.plate);
     });
-    odooPo = { ...parsed, periodLabel, use, fileName: f.name, importedAt: APP_TODAY_ISO.split("-").reverse().join("/"), unmatched };
+    const items = (odooPo && odooPo.items) || {};
+    odooPo = { ...parsed, periodLabel, use, items, fileName: f.name, importedAt: APP_TODAY_ISO.split("-").reverse().join("/"), unmatched };
     await window.storage.set(ODOO_KEY, JSON.stringify(odooPo), true);
     if(typeof persistCostingData==="function") await persistCostingData();
-    const tot = k => Object.values(parsed.plates).reduce((t,p)=>t+Object.values(p.m).reduce((a,e)=>a+(e[k]||0),0),0);
+    const tot = k => Object.values(parsed.plates).reduce((t,p)=>t+Object.values(p.m).reduce((a,e)=>a+odooEntrySplit(e,{repair:0,fuel:0,insurance:0,other:0})[k],0),0);
     st.textContent = `✓ ${Object.keys(parsed.plates).length} vehicles · ${parsed.totalOnly ? `${periodLabel} (total only — no monthly split)` : `${parsed.months.length} months (${odooMonthName(parsed.months[0])} – ${odooMonthName(parsed.months[parsed.months.length-1])})`}\n`
-      + `Repair RM ${Math.round(tot("repair")).toLocaleString()} · Fuel RM ${Math.round(tot("fuel")).toLocaleString()} · Insurance RM ${Math.round(tot("insurance")).toLocaleString()} · Kept aside (assets / GPS / hiring) RM ${Math.round(tot("other")).toLocaleString()}`
+      + `Repair RM ${Math.round(tot("repair")).toLocaleString()} · Fuel RM ${Math.round(tot("fuel")).toLocaleString()} · Insurance RM ${Math.round(tot("insurance")).toLocaleString()} · Not counted (unticked items) RM ${Math.round(tot("other")).toLocaleString()}`
       + (unmatched.length ? `\n⚠ Not in the register (not shown in Costing): ${unmatched.join(", ")}` : "");
     populateCostingFilters(); renderCosting();
   }catch(e){ console.warn(e); st.textContent = "✕ " + e.message; }
@@ -4474,6 +4538,7 @@ async function clearOdooPo(){
   populateCostingFilters(); renderCosting();
 }
 function renderOdooStatus(){
+  renderOdooItems();
   const st = document.getElementById("odooStatus"); if(!st || !odooPo) return;
   ["Repair","Fuel","Insurance"].forEach(k=>{ const el = document.getElementById("odooUse"+k); if(el) el.checked = !!(odooPo.use||{})[k.toLowerCase()]; });
   if(!st.textContent) st.textContent = `Last import: ${odooPo.fileName||"Odoo"} · ${odooPo.importedAt||""} · ${Object.keys(odooPo.plates).length} vehicles, ${odooPo.totalOnly ? (odooPo.periodLabel||"total only") : odooPo.months.length+" months"}`
@@ -4639,7 +4704,7 @@ function renderCostingTable(){
   if(odooPo && !odooPo.totalOnly && odooPo.months && odooPo.months.length){
     const ms = odooPo.months.slice(-12);
     const plates = new Set(rows.map(c=>utilPlateKey(c.plate)));
-    const sumM = (m, k) => Object.entries(odooPo.plates).reduce((t,[key,v])=> t + (!isFiltered || plates.has(key) ? ((v.m[m]||{})[k]||0) : 0), 0);
+    const sumM = (m, k) => Object.entries(odooPo.plates).reduce((t,[key,v])=> t + (!isFiltered || plates.has(key) ? odooEntrySplit(v.m[m], {repair:0,fuel:0,insurance:0,other:0})[k] : 0), 0);
     document.getElementById("costTrendScope").textContent = (isFiltered ? `Filtered (${rows.length} vehicles)` : "All vehicles") + " · Odoo purchase orders, last 12 months";
     if(costTrendChart) costTrendChart.destroy();
     costTrendChart = new Chart(document.getElementById("chartCostTrend"),{ type:"line",
