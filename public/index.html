@@ -1451,6 +1451,22 @@ body:not(.is-admin) .admin-only{display:none !important;}
           </div>
           <div id="contactsSaveConfirm" style="font-size:11px;color:var(--good);margin-top:6px;display:none;">✓ Kenalan disimpan — akan digunakan untuk notify WhatsApp seterusnya.</div>
         </div>
+
+        <div class="panel admin-only" id="migPanel">
+          <div class="panel-head"><h3>Move Database (new Supabase)</h3>
+            <span class="sub" style="font-size:11px;color:var(--ink-soft);margin-left:auto;">Connected to: <b id="migHost">—</b></span></div>
+          <ol style="font-size:12px;line-height:1.7;margin:0 0 10px 18px;padding:0;color:var(--ink-soft);">
+            <li><b>Semasa Supabase LAMA masih disambung:</b> tekan <b>⬇ Download backup penuh</b> — semua data dan semua fail (PDF polisi, sebut harga, gambar, PO, borang back charge) dalam satu fail. Simpan fail ini baik-baik.</li>
+            <li>Buat projek Supabase baru → <b>SQL Editor</b> → paste dan Run kandungan <code>supabase/schema.sql</code> (dalam repo GitHub).</li>
+            <li>Vercel → projek ini → <b>Settings → Environment Variables</b>: tukar <code>SUPABASE_URL</code> dan <code>SUPABASE_SERVICE_ROLE_KEY</code> kepada nilai projek baru → <b>Deployments → Redeploy</b>. Jangan ubah ADMIN_PASSWORD / SESSION_SECRET.</li>
+            <li>Buka app, login admin, pastikan "Connected to" tunjuk projek <b>baru</b>, kemudian tekan <b>⬆ Restore dari backup</b> dan pilih fail dari langkah 1.</li>
+          </ol>
+          <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;">
+            <button type="button" class="btn yellow" onclick="migDownload()">⬇ <span>Download full backup</span></button>
+            <label class="btn ghost" style="cursor:pointer;margin:0;text-transform:none;letter-spacing:0;">⬆ <span>Restore from backup</span><input type="file" accept=".json,application/json" style="display:none" onchange="migRestore(this.files[0]); this.value='';"></label>
+          </div>
+          <div id="migMsg" style="font-size:12px;margin-top:8px;white-space:pre-line;"></div>
+        </div>
       </section>
 
     </div>
@@ -1822,6 +1838,7 @@ function populateBranchDropdowns(){
   if(hrSel) hrSel.innerHTML = opts;
 }
 function renderSettings(){
+  if(currentRole==="admin") migIndex().catch(()=>{});
   const lockedMsg = document.getElementById("settingsLockedMsg");
   const wrap = document.getElementById("settingsAdminWrap");
   if(currentRole!=="admin"){
@@ -3263,6 +3280,76 @@ function exportInsuranceDb(){
 /* Printed purchase form: long text is split into the ruled lines (one .ln per line) by
    measuring the words at the printed font, so text never runs over the lines. */
 const PR_WRAP_JS = `(function(){document.querySelectorAll(".wrapln").forEach(function(td){var src=[].map.call(td.querySelectorAll(".ln"),function(d){return d.textContent.trim();}).filter(Boolean);var probe=td.querySelector(".ln");if(!probe)return;var cs=getComputedStyle(probe);var c=document.createElement("canvas").getContext("2d");c.font=cs.fontWeight+" "+cs.fontSize+" "+cs.fontFamily;var W=probe.clientWidth-6;var out=[];src.forEach(function(p){var line="";p.split(/\\s+/).forEach(function(w){var t=line?line+" "+w:w;if(c.measureText(t).width>W&&line){out.push(line);line=w;}else line=t;});if(line)out.push(line);});var min=+td.getAttribute("data-min")||1;while(out.length<min)out.push("");td.innerHTML=out.map(function(l){var d=document.createElement("div");d.className="ln";d.textContent=l;return d.outerHTML;}).join("");});})();`;
+/* ---- Move all data + files to another database (new Supabase project) ----
+   Backup file: {format:"fleet-full-backup-v1", host, createdAt, keys:{key:valueText|null}, files:[{id,type,b64}]} */
+async function migIndex(){
+  const r = await fetch("/api/migrate-index", { credentials:"same-origin" });
+  if(!r.ok){ let m = "HTTP " + r.status; try{ m = (await r.json()).error || m; }catch(e){} throw new Error(m); }
+  const d = await r.json();
+  const el = document.getElementById("migHost"); if(el) el.textContent = d.host;
+  return d;
+}
+const migSay = t => { const m = document.getElementById("migMsg"); if(m) m.textContent = t; };
+const blobToB64 = b => new Promise((ok, no)=>{ const fr = new FileReader(); fr.onload = ()=>ok(String(fr.result).split(",")[1] || ""); fr.onerror = no; fr.readAsDataURL(b); });
+async function migDownload(){
+  try{
+    migSay(fleetI18n.tr("Reading the list of data and files…"));
+    const idx = await migIndex();
+    const out = { format:"fleet-full-backup-v1", host: idx.host, createdAt: new Date().toISOString(), keys:{}, files:[] };
+    const failed = [];
+    for(const k of idx.keys){
+      const r = await fetch("/api/storage/" + encodeURIComponent(k), { credentials:"same-origin" });
+      if(!r.ok){ failed.push(k); continue; }
+      out.keys[k] = (await r.json()).value;
+    }
+    let n = 0, bytes = 0;
+    for(const f of idx.files){
+      n++; migSay(`${fleetI18n.tr("Copying files")} ${n} / ${idx.files.length}…`);
+      try{
+        const r = await fetch("/api/files/" + encodeURIComponent(f.id), { credentials:"same-origin" });
+        if(!r.ok) throw new Error("HTTP " + r.status);
+        const b = await r.blob(); bytes += b.size;
+        out.files.push({ id:f.id, type: b.type || f.type || "application/pdf", b64: await blobToB64(b) });
+      }catch(e){ failed.push(f.id); }
+    }
+    const blob = new Blob([JSON.stringify(out)], { type:"application/json" });
+    const a = document.createElement("a"); a.href = URL.createObjectURL(blob);
+    a.download = `fleet-full-backup_${idx.host.split(".")[0]}_${APP_TODAY_ISO}.json`;
+    document.body.appendChild(a); a.click(); setTimeout(()=>{ URL.revokeObjectURL(a.href); a.remove(); }, 2000);
+    const nk = Object.values(out.keys).filter(v=>v!=null).length;
+    migSay(`✓ ${fleetI18n.tr("Backup downloaded")}: ${nk} ${fleetI18n.tr("data lists")}, ${out.files.length} ${fleetI18n.tr("files")} (${(bytes/1048576).toFixed(1)} MB) — ${idx.host}`
+      + (failed.length ? `\n⚠ ${fleetI18n.tr("Could not copy")}: ${failed.join(", ")}` : ""));
+  }catch(e){ migSay("✕ " + e.message); }
+}
+async function migRestore(file){
+  if(!file) return;
+  try{
+    const pkg = JSON.parse(await file.text());
+    if(!pkg || pkg.format!=="fleet-full-backup-v1" || !pkg.keys) throw new Error(fleetI18n.tr("This is not a full backup file from this app."));
+    const idx = await migIndex();
+    const nk = Object.values(pkg.keys).filter(v=>v!=null).length;
+    if(idx.host===pkg.host && !confirm(fleetI18n.tr("This backup came from the database that is connected now. Restore it anyway?"))) return;
+    if(!confirm(fleetI18n.tr(`Restore ${nk} data lists and ${(pkg.files||[]).length} files into ${idx.host}? Data already there will be replaced.`))) return;
+    const failed = [];
+    let i = 0;
+    for(const [k, v] of Object.entries(pkg.keys)){
+      i++; migSay(`${fleetI18n.tr("Restoring data")} ${i} / ${Object.keys(pkg.keys).length}…`);
+      if(v==null || !idx.keys.includes(k)) continue;
+      try{ await window.storage.set(k, v, true); }catch(e){ failed.push(k + " (" + e.message + ")"); }
+    }
+    i = 0;
+    for(const f of (pkg.files||[])){
+      i++; migSay(`${fleetI18n.tr("Restoring files")} ${i} / ${pkg.files.length}…`);
+      try{
+        const blob = await (await fetch(`data:${f.type};base64,${f.b64}`)).blob();
+        const r = await fetch("/api/files/" + encodeURIComponent(f.id), { method:"PUT", credentials:"same-origin", headers:{ "Content-Type": f.type, "X-Requested-With":"fleet-app" }, body: blob });
+        if(!r.ok){ let m = "HTTP " + r.status; try{ m = (await r.json()).error || m; }catch(e){} throw new Error(m); }
+      }catch(e){ failed.push(f.id + " (" + e.message + ")"); }
+    }
+    migSay(`✓ ${fleetI18n.tr("Restore finished")} → ${idx.host}` + (failed.length ? `\n⚠ ${fleetI18n.tr("Not restored")}: ${failed.join(", ")}` : `\n${fleetI18n.tr("The page will reload in 3 seconds.")}`));
+    if(!failed.length) setTimeout(()=>location.reload(), 3000);
+  }catch(e){ migSay("✕ " + e.message); }
+}
 /* PDF report of the Insurance Database (rows shown: month + column filters). Opens a print
    window — choose "Save as PDF". A4 landscape, summary boxes, detail table, totals, sign-off. */
 function printInsuranceDbReport(){

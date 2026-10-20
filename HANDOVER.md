@@ -26,7 +26,7 @@ requesters.
 - **After every change: commit and push to `claude/fleet-system-app-fuj4wz`.** Do **not** open PRs unless
   asked. Do not put model names or IDs in commits.
 - **Bump the build** on every change: `public/sw.js` → `const CACHE = "fleet-ops-vNNN"`. The current value
-  is in the file (at the time of writing it was **v144**). The sidebar shows "build NNN" (read from `sw.js`). When the owner says
+  is in the file (at the time of writing it was **v145**). The sidebar shows "build NNN" (read from `sw.js`). When the owner says
   "masih sama / tak berubah", ask them which build the sidebar shows. If it is old, it is a deploy or cache
   issue (hard refresh with Ctrl+Shift+R), not a code issue.
 - The production site is **not reachable from the cloud sandbox** (egress proxy 403). Verify locally with
@@ -93,6 +93,16 @@ return 404 on Vercel if the `api/` file is missing.
    - Use the same helpers for new shared lists.
 3. Inside the inline `<script>` of index.html never write a literal `</script>`. In print windows use
    `<\/script>`; a literal one breaks the whole page.
+
+### Moving to a new database (Supabase project change)
+Settings → **Move Database (new Supabase)** (`#migPanel`).
+- **⬇ Download full backup** (`migDownload`) reads `GET /api/migrate-index` (admin; returns keys + file
+  list + connected host), then downloads every key and every file into one JSON (`fleet-full-backup-v1`,
+  files base64).
+- **⬆ Restore from backup** (`migRestore`) PUTs them into whatever database is connected now.
+- Steps for the owner: download from the old project → run `supabase/schema.sql` in the new project → change
+  `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` in Vercel and redeploy → log in → Restore.
+- Key history (`kv_history`) is not carried over.
 
 ## 4. Front-end conventions
 - **Translation:** UI text goes through `fleetI18n.tr("English")`. Add `["English","Melayu"]` to
