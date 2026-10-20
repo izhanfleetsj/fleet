@@ -1166,7 +1166,8 @@ body:not(.is-admin) .admin-only{display:none !important;}
               <button type="button" class="btn ghost" style="padding:4px 10px;font-size:11px;" onclick="exportOdooPivot()">⬇ Export Excel</button>
             </div>
           </div>
-          <div class="form-row" style="grid-template-columns:repeat(6,1fr);align-items:end;margin-bottom:10px;">
+          <div class="form-row" style="grid-template-columns:repeat(7,1fr);align-items:end;margin-bottom:10px;">
+            <div><label>Item</label><select id="op_item" onchange="renderCosting()"></select></div>
             <div><label>Year</label><select id="op_period" onchange="renderCosting()"></select></div>
             <div><label>Company</label><select id="op_company" onchange="renderCosting()"></select></div>
             <div><label>Branch</label><select id="op_branch" onchange="renderCosting()"></select></div>
@@ -4994,6 +4995,8 @@ function opRows(){
   const br = (document.getElementById("op_branch")||{}).value || "";
   const ty = (document.getElementById("op_type")||{}).value || "";
   const q = ((document.getElementById("op_search")||{}).value || "").trim().toUpperCase();
+  const itemSel = (document.getElementById("op_item")||{}).value || "";
+  const itemOk = name => !itemSel || (itemSel.startsWith("T:") ? odooCategory(name)===itemSel.slice(2) : name===itemSel.slice(2));
   const out = [];
   Object.entries(odooPo.plates).forEach(([key, v])=>{
     const info = opVehInfo(v.plate);
@@ -5003,7 +5006,7 @@ function opRows(){
     const plateHit = !q || v.plate.toUpperCase().includes(q) || info.company.toUpperCase().includes(q);
     const items = {};
     months.forEach(ym=>Object.entries((v.m[ym]||{}).lines||{}).forEach(([name, a])=>{
-      if(!odooItemCfg(name).on) return;
+      if(!odooItemCfg(name).on || !itemOk(name)) return;
       if(!plateHit && !name.toUpperCase().includes(q)) return;
       const it = items[name] = items[name] || { name, m:{}, total:0 };
       it.m[ym] = Math.round(((it.m[ym]||0) + a)*100)/100; it.total += a;
@@ -5026,6 +5029,15 @@ function renderCosting(){
   opSetOptions("op_company", [...new Set(infos.map(i=>i.company).filter(Boolean))].sort(), fleetI18n.tr("All companies"));
   opSetOptions("op_branch", [...new Set(infos.map(i=>i.branch).filter(b=>b && b!=="—"))].sort(), fleetI18n.tr("All branches"));
   opSetOptions("op_type", [...new Set(infos.map(i=>i.type).filter(Boolean))].sort(), fleetI18n.tr("All types"));
+  const isel = document.getElementById("op_item");
+  if(isel){
+    const keep = isel.value;
+    const names = odooPo ? odooItemList().map(i=>i.name).sort((a,b)=>a.localeCompare(b)) : [];
+    isel.innerHTML = `<option value="">${escHtml(fleetI18n.tr("All items"))}</option>`
+      + `<optgroup label="${escHtml(fleetI18n.tr("By type"))}">${["fuel","repair","insurance","other"].map(k=>`<option value="T:${k}">${escHtml(fleetI18n.tr(ODOO_TYPE_LABEL[k]))}</option>`).join("")}</optgroup>`
+      + `<optgroup label="${escHtml(fleetI18n.tr("Odoo items"))}">${names.map(n=>`<option value="I:${escHtml(n)}">${escHtml(n)}</option>`).join("")}</optgroup>`;
+    if([...isel.options].some(o=>o.value===keep)) isel.value = keep;
+  }
   const ps = document.getElementById("op_period");
   if(ps){
     const keep = ps.value;
