@@ -1031,20 +1031,6 @@ body:not(.is-admin) .admin-only{display:none !important;}
           <div id="icEditor" style="display:none;margin-top:12px;"></div>
         </div>
 
-        <div class="panel">
-          <div class="panel-head">
-            <h3>Insurance Register</h3>
-          </div>
-          <div id="insPdfStatus" style="display:none;font-size:11.5px;margin:-6px 0 10px;white-space:pre-line;"></div>
-          <div style="max-height:600px;overflow:auto;border:1px solid var(--line);border-radius:var(--radius);">
-          <table class="fit-table">
-            <thead style="position:sticky;top:0;background:var(--panel);z-index:1;"><tr id="insHeadRow"></tr></thead>
-            <tbody id="insBody"></tbody>
-          </table>
-          </div>
-          <div style="display:flex;align-items:center;gap:10px;margin-top:8px;"><div id="insCount" style="font-size:11px;color:var(--ink-soft);"></div><button type="button" class="btn ghost" id="insClearAllBtn" style="display:none;padding:3px 9px;font-size:10.5px;" onclick="xlClearAll('insurance')">✕ Clear all filters</button></div>
-        </div>
-
         <div class="panel admin-only" id="idbPanel">
           <div class="panel-head">
             <h3>Vehicle's Insurance Database — All Policy Years</h3>
@@ -1062,6 +1048,20 @@ body:not(.is-admin) .admin-only{display:none !important;}
           </table>
           </div>
           <div style="display:flex;align-items:center;gap:10px;margin-top:8px;"><div id="idbCount" style="font-size:11px;color:var(--ink-soft);"></div><button type="button" class="btn ghost" id="idbClearAllBtn" style="display:none;padding:3px 9px;font-size:10.5px;" onclick="xlClearAll('insdb')">✕ Clear all filters</button></div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head">
+            <h3>Insurance Register</h3>
+          </div>
+          <div id="insPdfStatus" style="display:none;font-size:11.5px;margin:-6px 0 10px;white-space:pre-line;"></div>
+          <div style="max-height:600px;overflow:auto;border:1px solid var(--line);border-radius:var(--radius);">
+          <table class="fit-table">
+            <thead style="position:sticky;top:0;background:var(--panel);z-index:1;"><tr id="insHeadRow"></tr></thead>
+            <tbody id="insBody"></tbody>
+          </table>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px;margin-top:8px;"><div id="insCount" style="font-size:11px;color:var(--ink-soft);"></div><button type="button" class="btn ghost" id="insClearAllBtn" style="display:none;padding:3px 9px;font-size:10.5px;" onclick="xlClearAll('insurance')">✕ Clear all filters</button></div>
         </div>
       </section>
 
