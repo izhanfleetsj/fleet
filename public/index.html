@@ -3260,6 +3260,9 @@ function exportInsuranceDb(){
   const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Insurance Database");
   XLSX.writeFile(wb, `Insurance_Database_${APP_TODAY_ISO}.xlsx`);
 }
+/* Printed purchase form: long text is split into the ruled lines (one .ln per line) by
+   measuring the words at the printed font, so text never runs over the lines. */
+const PR_WRAP_JS = `(function(){document.querySelectorAll(".wrapln").forEach(function(td){var src=[].map.call(td.querySelectorAll(".ln"),function(d){return d.textContent.trim();}).filter(Boolean);var probe=td.querySelector(".ln");if(!probe)return;var cs=getComputedStyle(probe);var c=document.createElement("canvas").getContext("2d");c.font=cs.fontWeight+" "+cs.fontSize+" "+cs.fontFamily;var W=probe.clientWidth-6;var out=[];src.forEach(function(p){var line="";p.split(/\\s+/).forEach(function(w){var t=line?line+" "+w:w;if(c.measureText(t).width>W&&line){out.push(line);line=w;}else line=t;});if(line)out.push(line);});var min=+td.getAttribute("data-min")||1;while(out.length<min)out.push("");td.innerHTML=out.map(function(l){var d=document.createElement("div");d.className="ln";d.textContent=l;return d.outerHTML;}).join("");});})();`;
 /* PDF report of the Insurance Database (rows shown: month + column filters). Opens a print
    window — choose "Save as PDF". A4 landscape, summary boxes, detail table, totals, sign-off. */
 function printInsuranceDbReport(){
@@ -7198,7 +7201,7 @@ async function printPurchaseRequest(stageKey, idx, mode, win){
   table{width:100%;border-collapse:collapse;} td{vertical-align:bottom;padding:5px 2px;}
   td.lb{width:52mm;white-space:nowrap;} td.c{width:4mm;} td.val{border-bottom:1px solid #000;font-weight:600;}
   .sec{font-weight:700;text-decoration:underline;margin:14px 0 4px;} .strike{text-decoration:line-through;font-weight:400;color:#555;}
-  .ln{border-bottom:1px solid #000;height:20px;font-weight:600;padding-top:3px;}
+  .ln{border-bottom:1px solid #000;min-height:20px;font-weight:600;padding-top:3px;}
   .sig{display:flex;justify-content:space-between;gap:8mm;margin-top:26px;} .sig>div{flex:1;font-size:11.5px;}
   .sig .s{border-bottom:1px dotted #000;height:46px;margin-bottom:4px;} .sig .r{display:flex;gap:4px;margin-top:5px;} .sig .r span:last-child{flex:1;border-bottom:1px solid #000;font-weight:600;min-height:15px;}
   .note{font-size:10.5px;margin-top:18px;}
@@ -7219,7 +7222,7 @@ async function printPurchaseRequest(stageKey, idx, mode, win){
       ${line("1) Syarikat", e(i.company))}
       ${line("2) Jenis / Model", e(i.model))}
       ${line("3) Jenis Pembelian", `${pick(i.purchaseType,["BARU","Baru"],["TRADE IN","Trade In"])} ( nyatakan no. kenderaan lama : <u>&nbsp;${e(i.oldPlate)||"&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;"}&nbsp;</u> )`)}
-      <tr><td class="lb" style="vertical-align:top;">4) Sebab / Tujuan<br>&nbsp;&nbsp;&nbsp;&nbsp;Pembelian (sertakan<br>&nbsp;&nbsp;&nbsp;&nbsp;lampiran jika perlu)</td><td class="c" style="vertical-align:top;">:</td><td>${reasonLines.map(l=>`<div class="ln">${e(l)}</div>`).join("")}</td></tr>
+      <tr><td class="lb" style="vertical-align:top;">4) Sebab / Tujuan<br>&nbsp;&nbsp;&nbsp;&nbsp;Pembelian (sertakan<br>&nbsp;&nbsp;&nbsp;&nbsp;lampiran jika perlu)</td><td class="c" style="vertical-align:top;">:</td><td class="wrapln" data-min="4">${reasonLines.map(l=>`<div class="ln">${e(l)}</div>`).join("")}</td></tr>
     </table>
     <div class="sig" style="margin-top:14px;">
       <div><div class="s"></div>Tandatangan Pemohon<div class="r"><span>Nama :</span><span>${e(i.requestedBy)}</span></div><div class="r"><span>Tarikh :</span><span>${e(dmy(i.date))}</span></div></div>
@@ -7250,7 +7253,7 @@ async function printPurchaseRequest(stageKey, idx, mode, win){
   if(!w){ alert(fleetI18n.tr("Please allow pop-ups to print the report.")); return; }
   const title = `${e(i.serial)} — Permohonan Pembelian Kenderaan`;
   if(mode==="form"){
-    w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${title}</title><style>${css}</style></head><body>${page1}<script>document.querySelectorAll(".page").forEach(function(p){var d=document.createElement("div");d.className="pgno";d.textContent="Muka 1";p.appendChild(d);var h=document.createElement("div");h.className="runhead";h.textContent=document.title;p.appendChild(h);});window.onload=function(){window.print();}<\/script></body></html>`);
+    w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${title}</title><style>${css}</style></head><body>${page1}<script>${PR_WRAP_JS}<\/script><script>document.querySelectorAll(".page").forEach(function(p){var d=document.createElement("div");d.className="pgno";d.textContent="Muka 1";p.appendChild(d);var h=document.createElement("div");h.className="runhead";h.textContent=document.title;p.appendChild(h);});window.onload=function(){window.print();}<\/script></body></html>`);
     w.document.close();
     return;
   }
