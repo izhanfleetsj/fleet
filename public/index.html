@@ -881,11 +881,12 @@ body:not(.is-admin) .admin-only{display:none !important;}
           <div id="prSlotRequester">
         <div class="panel" id="purchaseRequestForm" style="display:none;background:var(--note-bg);box-shadow:none;border:1px solid var(--yellow-deep);margin:10px 0 0;">
           <div class="panel-head" style="margin-bottom:10px;"><h3 style="font-size:12.5px;">New Vehicle Purchase Request</h3><span class="sub" style="font-size:11px;color:var(--ink-soft);">Fill in the details below — the request form is printed for approval</span></div>
-          <div class="form-row" style="grid-template-columns:1fr 2fr 1.5fr 1fr;">
+          <div class="form-row" style="grid-template-columns:1fr 2fr 1.5fr 1fr 1fr;">
             <div><label>Date</label><input id="pr_date" type="date"></div>
             <div><label>Applicant Name</label><input id="pr_by" class="dsp-up" placeholder="e.g. ABC"></div>
             <div><label>Position</label><input id="pr_position" class="dsp-up" placeholder="e.g. SR EXECUTIVE"></div>
             <div><label>Department</label><input id="pr_dept" class="dsp-up" value="FLEET"></div>
+            <div><label>Requesting Branch</label><select id="pr_branch"></select></div>
           </div>
           <div style="font-weight:700;font-size:11.5px;margin:6px 0 8px;text-decoration:underline;">A - For Vehicle Purchase</div>
           <div class="form-row" style="grid-template-columns:1fr 1fr;">
@@ -6892,7 +6893,7 @@ let disposeStage = "", disposeEditRef = "";
    once removed from the register they keep a snapshot (rec). */
 function dispRec(i){
   return (i.cid!=null && complianceData.find(d=>d.id===i.cid)) || i.rec
-    || (i.kind==="request" ? {company:i.company, category:i.model || ((i.category||"") + (Number(i.qty)>1 ? ` ×${i.qty}` : "")), location:i.branch||i.dept||"", plate:i.serial||""} : {});
+    || (i.kind==="request" ? {company:i.company, category:i.model || ((i.category||"") + (Number(i.qty)>1 ? ` ×${i.qty}` : "")), location:i.branch||"", plate:i.serial||""} : {});
 }
 /* One set of columns for both directions: price / purchase date / supplier for new vehicles,
    sold value / date sold / buyer for disposed ones. */
@@ -7000,6 +7001,9 @@ function togglePurchaseRequestForm(editRef, slot){
   const set = (id,v) => { document.getElementById(id).value = v==null ? "" : v; };
   PR_FIELDS.forEach(id=>set(id,""));
   set("pr_date", item ? item.date : APP_TODAY_ISO);
+  const bs = document.getElementById("pr_branch");
+  bs.innerHTML = `<option value="">${escHtml(fleetI18n.tr("— Select branch —"))}</option>` + BRANCH_CODES.map(b=>`<option value="${b}">${b}</option>`).join("");
+  bs.value = item && item.branch ? item.branch : "";
   set("pr_dept", item ? item.dept : (f.parentElement.id==="prSlotDispose" ? "FLEET" : ""));
   document.getElementById("prRequesterMsg").innerHTML = "";
   if(item){ set("pr_by",item.requestedBy); set("pr_position",item.position); set("pr_company",item.company); set("pr_model",item.model); set("pr_reason",item.reason); set("pr_oldPlate",item.oldPlate); }
@@ -7090,7 +7094,7 @@ async function submitPurchaseRequest(){
     const [sk, si] = prEditRef.split(":"); const item = (disposePipeline[sk]||[])[+si];
     if(!item) return;
     if(!v("pr_by") || !v("pr_model")){ alert(fleetI18n.tr("Please fill in at least Applicant Name and Type / Model.")); return; }
-    Object.assign(item, { date: v("pr_date") || item.date, requestedBy:up("pr_by"), position:up("pr_position"), dept:up("pr_dept"),
+    Object.assign(item, { date: v("pr_date") || item.date, requestedBy:up("pr_by"), position:up("pr_position"), dept:up("pr_dept"), branch:v("pr_branch"),
       company:up("pr_company"), model:up("pr_model"), reason:up("pr_reason"), purchaseType:v("pr_type"),
       oldPlate: v("pr_type")==="TRADE IN" ? up("pr_oldPlate") : "",
       quotes: prQuotes.filter(q=>q.vendor || q.price!=null || q.file || q.model), photos: prPhotos });
@@ -7108,6 +7112,7 @@ async function submitPurchaseRequest(){
     return;
   }
   if(!v("pr_by") || !v("pr_model")){ alert(fleetI18n.tr("Please fill in at least Applicant Name and Type / Model.")); return; }
+  if(!v("pr_branch")){ alert(fleetI18n.tr("Please choose the requesting branch.")); return; }
   const date = v("pr_date") || APP_TODAY_ISO;
   const w = window.open("", "_blank");   // open now (still inside the click) so the print window is not blocked
   // Serial runs across New / Dispose and requests still waiting in the inbox.
@@ -7116,7 +7121,7 @@ async function submitPurchaseRequest(){
   if(currentRole!=="admin"){ try{ await loadDisposePipeline(); }catch(e){} }
   const item = { kind:"request", uid: Date.now().toString(36) + Math.random().toString(36).slice(2,7),
     serial: nextPurchaseSerial(date.slice(0,4), inbox), date,
-    requestedBy:up("pr_by"), position:up("pr_position"), dept:up("pr_dept"),
+    requestedBy:up("pr_by"), position:up("pr_position"), dept:up("pr_dept"), branch:v("pr_branch"),
     company:up("pr_company"), purchaseType:v("pr_type"), oldPlate: v("pr_type")==="TRADE IN" ? up("pr_oldPlate") : "",
     reason:up("pr_reason"), model:up("pr_model"),
     addedAt: date.split("-").reverse().join("/") };
@@ -7195,7 +7200,7 @@ async function printPurchaseRequest(stageKey, idx, mode, win){
     <h1>BORANG PERMOHONAN PEMBELIAN KENDERAAN<br>BERNILAI MELEBIHI RM 10,000.00 SEUNIT</h1>
     <div class="siri">No. Siri : <b>${e(i.serial)}</b></div>
     <div class="two"><table>${line("1) Tarikh", e(dmy(i.date)))}${line("2) Nama Pemohon", e(i.requestedBy))}${line("4) Jawatan", e(i.position))}</table>
-      <table><tr><td style="height:24px"></td></tr>${line("3) Jabatan", e(i.dept), "")}</table></div>
+      <table><tr><td style="height:24px"></td></tr>${line("3) Jabatan", e(i.dept), "")}${line("5) Cawangan", e(i.branch||""), "")}</table></div>
     <div class="sec">A - Bagi Pembelian Kenderaan</div>
     <table>
       ${line("1) Syarikat", e(i.company))}
