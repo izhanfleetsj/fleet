@@ -1142,7 +1142,7 @@ body:not(.is-admin) .admin-only{display:none !important;}
           <div id="odooStatus" style="font-size:11.5px;color:var(--ink-soft);white-space:pre-line;"></div>
         </div>
 
-        <div class="kpi-row" id="opKpis" style="grid-template-columns:repeat(5,1fr);"></div>
+        <div class="kpi-row" id="opKpis" style="grid-template-columns:repeat(6,1fr);"></div>
 
         <div class="two-col-charts" id="opCharts">
           <div class="panel">
@@ -4369,8 +4369,9 @@ function odooCategory(product){
   const p = String(product||"").toLowerCase();
   if(/fuel/.test(p)) return "fuel";
   if(/insurance|stamp duty|road ?tax/.test(p)) return "insurance";
-  if(/fixed asset|\(asset\)|lorry\s*\(|^car\s*\/\s*van$|joint machine|\bgps\b|hiring|computer|vehicle purchase/.test(p)) return "other";
-  return "repair";   // upkeep of motor vehicles, parts, tyre, labour, towing, service…
+  if(/\bgps\b/.test(p)) return "gps";
+  if(/fixed asset|\(asset\)|lorry\s*\(|^car\s*\/\s*van$|vehicle purchase/.test(p)) return "other";   // fixed assets (new vehicles / machines)
+  return "repair";   // upkeep of motor vehicles: parts, tyre, labour, towing, service, machinery hiring, HDD joint machine, "upkeep of computer" (keyed by mistake for vehicle upkeep)…
 }
 async function loadOdooPo(){ try{ const r = await window.storage.get(ODOO_KEY, true); const v = r && JSON.parse(r.value); if(v && v.plates) odooPo = v; }catch(e){} }
 function odooPeriodMonths(){
@@ -4395,7 +4396,7 @@ function odooPeriodLabel(){
 function odooItemCfg(product){
   const auto = odooCategory(product);
   const c = odooPo && odooPo.items && odooPo.items[product];
-  return { on: c ? !!c.on : true, cat: (c && c.cat) || (auto==="other" ? "repair" : auto), auto };
+  return { on: c ? !!c.on : true, cat: (c && c.cat) || (auto==="other" || auto==="gps" ? "repair" : auto), auto };
 }
 function odooEntrySplit(e, out, lines){
   Object.entries((e && e.lines) || {}).forEach(([k,a])=>{
@@ -4419,13 +4420,14 @@ function odooItemList(){
   return Object.entries(tot).map(([name,amt])=>({name, amt, ...odooItemCfg(name)})).sort((a,b)=>b.amt-a.amt);
 }
 const ODOO_CAT_LABEL = { repair:"Repair", fuel:"Fuel", insurance:"Insurance" };
-const ODOO_TYPE_LABEL = { fuel:"Fuel", repair:"Repair / Upkeep", insurance:"Insurance + Stamp Duty", other:"Assets / GPS / Hiring" };
+const ODOO_TYPE_LABEL = { fuel:"Fuel", repair:"Repair / Upkeep", insurance:"Insurance + Stamp Duty", gps:"GPS", other:"Fixed Assets" };
+const ODOO_TYPES = ["fuel","repair","insurance","gps","other"];
 function renderOdooItems(){
   const w = document.getElementById("odooItems"); if(!w) return;
   if(!odooPo){ w.innerHTML = ""; return; }
   const list = odooItemList();
   const nOn = list.filter(i=>i.on).length;
-  const groups = ["fuel","repair","insurance","other"].map(cat=>({cat, items:list.filter(i=>i.auto===cat)})).filter(g=>g.items.length);
+  const groups = ODOO_TYPES.map(cat=>({cat, items:list.filter(i=>i.auto===cat)})).filter(g=>g.items.length);
   w.innerHTML = `<details${w.dataset.open==="1"?" open":""} ontoggle="this.parentNode.dataset.open=this.open?'1':''">
     <summary style="cursor:pointer;font-size:12px;font-weight:600;">☑ ${escHtml(fleetI18n.tr("Odoo items"))} — ${nOn} / ${list.length} ${escHtml(fleetI18n.tr("selected"))}</summary>
     <div style="font-size:11px;color:var(--ink-soft);margin:6px 0;">${escHtml(fleetI18n.tr("Tick the Odoo items to show in the table and totals."))}</div>
@@ -4473,7 +4475,7 @@ function parseOdooPivot(rows){
   const levels = [...new Set(labelRows.map(r=>indent(r[0])))].sort((a,b)=>a-b);
   const plateLevel = levels[0], productLevel = levels[1];
   const plates = {}; let cur = null;
-  const add = (rec, ym, product, amt) => { const e = rec.m[ym] = rec.m[ym] || { repair:0, fuel:0, insurance:0, other:0, lines:{} };
+  const add = (rec, ym, product, amt) => { const e = rec.m[ym] = rec.m[ym] || { repair:0, fuel:0, insurance:0, gps:0, other:0, lines:{} };
     const cat = odooCategory(product); e[cat] = Math.round((e[cat] + amt)*100)/100; e.lines[product] = Math.round(((e.lines[product]||0) + amt)*100)/100; };
   labelRows.forEach(r=>{
     const label = String(r[0]).trim().replace(/\s*\(\d+\)$/,""), lvl = indent(r[0]);   // Odoo adds " (2)" to repeated group names
@@ -5049,7 +5051,7 @@ function renderCosting(){
   }
   const months = opMonths(), rows = opRows();
   // KPIs by item type
-  const cat = { fuel:0, repair:0, insurance:0, other:0 }; let grand = 0;
+  const cat = { fuel:0, repair:0, insurance:0, gps:0, other:0 }; let grand = 0;
   rows.forEach(r=>r.items.forEach(i=>{ cat[odooCategory(i.name)] += i.total; grand += i.total; }));
   const period = (ps && ps.selectedOptions[0] ? ps.selectedOptions[0].textContent : "");
   if(kp) kp.innerHTML = [
@@ -5057,7 +5059,8 @@ function renderCosting(){
     ["Fuel", cat.fuel, grand ? Math.round(cat.fuel/grand*100)+"%" : "", ""],
     ["Repair / Upkeep", cat.repair, grand ? Math.round(cat.repair/grand*100)+"%" : "", "alert"],
     ["Insurance + Stamp Duty", cat.insurance, grand ? Math.round(cat.insurance/grand*100)+"%" : "", ""],
-    ["Assets / GPS / Hiring", cat.other, grand ? Math.round(cat.other/grand*100)+"%" : "", ""],
+    ["GPS", cat.gps, grand ? Math.round(cat.gps/grand*100)+"%" : "", ""],
+    ["Fixed Assets", cat.other, grand ? Math.round(cat.other/grand*100)+"%" : "", ""],
   ].map(([l,v,f,c])=>`<div class="kpi ${c}"><div class="label">${escHtml(fleetI18n.tr(l))}</div><div class="value mono" style="font-size:22px;">${opRM(v)}</div><div class="foot">${escHtml(f)}</div></div>`).join("");
   // pivot
   const colTot = {}; rows.forEach(r=>Object.entries(r.m).forEach(([ym,a])=>colTot[ym] = (colTot[ym]||0) + a));
@@ -5084,9 +5087,9 @@ function renderCosting(){
 }
 /* Charts: monthly stacked bars and top-10 vehicles, by item type. Palette checked with the
    dataviz validator for light and dark (fixed order fuel → insurance → repair → assets). */
-const OP_TYPES = ["fuel","insurance","repair","other"];
-const OP_COLORS = { light:{fuel:"#C98F00", insurance:"#2F6FA3", repair:"#C1443C", other:"#7A5BB5"},
-                    dark:{fuel:"#B88300", insurance:"#4F8CC4", repair:"#D9534A", other:"#9A7BD0"} };
+const OP_TYPES = ["fuel","insurance","repair","gps","other"];
+const OP_COLORS = { light:{fuel:"#C98F00", insurance:"#2F6FA3", repair:"#C1443C", gps:"#1E9078", other:"#7A5BB5"},
+                    dark:{fuel:"#B88300", insurance:"#4F8CC4", repair:"#D9534A", gps:"#20A585", other:"#9A7BD0"} };
 let opMonthChart = null, opTopChart = null;
 function renderOpCharts(months, rows){
   const box = document.getElementById("opCharts"); if(!box || typeof Chart==="undefined") return;
@@ -5095,7 +5098,7 @@ function renderOpCharts(months, rows){
   const col = OP_COLORS[dark ? "dark" : "light"], surface = fleetI18n.cssVar("--panel") || (dark ? "#1B1D1F" : "#FFFFFF");
   const ink = fleetI18n.cssVar("--ink-soft") || "#666", grid = fleetI18n.cssVar("--grid") || "rgba(0,0,0,.08)";
   const label = k => fleetI18n.tr(ODOO_TYPE_LABEL[k]);
-  const byType = (r, m) => { const o = {fuel:0,insurance:0,repair:0,other:0}; r.items.forEach(i=>{ const v = m ? (i.m[m]||0) : i.total; o[odooCategory(i.name)] += v; }); return o; };
+  const byType = (r, m) => { const o = {fuel:0,insurance:0,repair:0,gps:0,other:0}; r.items.forEach(i=>{ const v = m ? (i.m[m]||0) : i.total; o[odooCategory(i.name)] += v; }); return o; };
   const ds = (data) => OP_TYPES.map((k,j)=>({ label: label(k), data: data.map(d=>Math.round(d[k]*100)/100), backgroundColor: col[k],
     borderColor: surface, borderWidth: {top:2, left:0, right:0, bottom:0}, borderRadius: 4, borderSkipped: false, maxBarThickness: 34, stack: "s" }));
   const money = v => "RM " + Math.round(v).toLocaleString();
@@ -5106,7 +5109,7 @@ function renderOpCharts(months, rows){
   const y = opYear();
   document.getElementById("opChartMonthTitle").textContent = `${fleetI18n.tr("Monthly Cost")} — ${odooPo.totalOnly ? (odooPo.periodLabel||"") : y}`;
   document.getElementById("opChartTopTitle").textContent = `${fleetI18n.tr("Top 10 Vehicles")} — ${odooPo.totalOnly ? (odooPo.periodLabel||"") : y}`;
-  const mData = months.map(m=>{ const o = {fuel:0,insurance:0,repair:0,other:0}; rows.forEach(r=>{ const b = byType(r, m); OP_TYPES.forEach(k=>o[k] += b[k]); }); return o; });
+  const mData = months.map(m=>{ const o = {fuel:0,insurance:0,repair:0,gps:0,other:0}; rows.forEach(r=>{ const b = byType(r, m); OP_TYPES.forEach(k=>o[k] += b[k]); }); return o; });
   if(opMonthChart) opMonthChart.destroy();
   opMonthChart = new Chart(document.getElementById("chartOpMonth"), { type:"bar",
     data:{ labels: months.map(m=>m==="ALL" ? (odooPo.periodLabel||"Total") : odooMonthName(m).slice(0,3)), datasets: ds(mData) },
@@ -5139,7 +5142,7 @@ function renderOpItemPanel(){
   const pnl = document.getElementById("op_itemPanel"); if(!pnl) return;
   const q = opItemQuery.trim().toUpperCase();
   const list = odooItemList().filter(i=>!q || i.name.toUpperCase().includes(q));
-  const groups = ["fuel","repair","insurance","other"].map(cat=>({cat, items:list.filter(i=>i.auto===cat).sort((a,b)=>a.name.localeCompare(b.name))})).filter(g=>g.items.length);
+  const groups = ODOO_TYPES.map(cat=>({cat, items:list.filter(i=>i.auto===cat).sort((a,b)=>a.name.localeCompare(b.name))})).filter(g=>g.items.length);
   const enc = n => escHtml(JSON.stringify(n));
   pnl.innerHTML = `<input id="op_itemQ" placeholder="${escHtml(fleetI18n.tr("Search item…"))}" value="${escHtml(opItemQuery)}" oninput="opItemQuery=this.value;renderOpItemPanel();const e=document.getElementById('op_itemQ');e.focus();e.setSelectionRange(e.value.length,e.value.length);" style="width:100%;margin-bottom:6px;">
     <div style="display:flex;gap:6px;margin-bottom:6px;">
