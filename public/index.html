@@ -1167,7 +1167,10 @@ body:not(.is-admin) .admin-only{display:none !important;}
             </div>
           </div>
           <div class="form-row" style="grid-template-columns:repeat(7,1fr);align-items:end;margin-bottom:10px;">
-            <div><label>Item</label><select id="op_item" onchange="renderCosting()"></select></div>
+            <div style="position:relative;" id="op_itemBox"><label>Item</label>
+              <button type="button" id="op_itemBtn" onclick="opItemToggle(event)" style="width:100%;text-align:left;display:flex;justify-content:space-between;align-items:center;gap:6px;padding:9px 10px;border:1px solid var(--line);border-radius:var(--radius);background:var(--panel);color:var(--ink);font:inherit;font-size:13px;cursor:pointer;"><span id="op_itemLbl" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">All items</span><span>▾</span></button>
+              <div id="op_itemPanel" style="display:none;position:absolute;z-index:60;top:100%;left:0;margin-top:4px;width:340px;max-width:90vw;background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);box-shadow:0 8px 24px rgba(0,0,0,.25);padding:8px;" onclick="event.stopPropagation()"></div>
+            </div>
             <div><label>Year</label><select id="op_period" onchange="renderCosting()"></select></div>
             <div><label>Company</label><select id="op_company" onchange="renderCosting()"></select></div>
             <div><label>Branch</label><select id="op_branch" onchange="renderCosting()"></select></div>
@@ -4995,8 +4998,7 @@ function opRows(){
   const br = (document.getElementById("op_branch")||{}).value || "";
   const ty = (document.getElementById("op_type")||{}).value || "";
   const q = ((document.getElementById("op_search")||{}).value || "").trim().toUpperCase();
-  const itemSel = (document.getElementById("op_item")||{}).value || "";
-  const itemOk = name => !itemSel || (itemSel.startsWith("T:") ? odooCategory(name)===itemSel.slice(2) : name===itemSel.slice(2));
+  const itemOk = name => !opItemSel.size || opItemSel.has(name);
   const out = [];
   Object.entries(odooPo.plates).forEach(([key, v])=>{
     const info = opVehInfo(v.plate);
@@ -5029,15 +5031,7 @@ function renderCosting(){
   opSetOptions("op_company", [...new Set(infos.map(i=>i.company).filter(Boolean))].sort(), fleetI18n.tr("All companies"));
   opSetOptions("op_branch", [...new Set(infos.map(i=>i.branch).filter(b=>b && b!=="—"))].sort(), fleetI18n.tr("All branches"));
   opSetOptions("op_type", [...new Set(infos.map(i=>i.type).filter(Boolean))].sort(), fleetI18n.tr("All types"));
-  const isel = document.getElementById("op_item");
-  if(isel){
-    const keep = isel.value;
-    const names = odooPo ? odooItemList().map(i=>i.name).sort((a,b)=>a.localeCompare(b)) : [];
-    isel.innerHTML = `<option value="">${escHtml(fleetI18n.tr("All items"))}</option>`
-      + `<optgroup label="${escHtml(fleetI18n.tr("By type"))}">${["fuel","repair","insurance","other"].map(k=>`<option value="T:${k}">${escHtml(fleetI18n.tr(ODOO_TYPE_LABEL[k]))}</option>`).join("")}</optgroup>`
-      + `<optgroup label="${escHtml(fleetI18n.tr("Odoo items"))}">${names.map(n=>`<option value="I:${escHtml(n)}">${escHtml(n)}</option>`).join("")}</optgroup>`;
-    if([...isel.options].some(o=>o.value===keep)) isel.value = keep;
-  }
+  opItemLabel();
   const ps = document.getElementById("op_period");
   if(ps){
     const keep = ps.value;
@@ -5125,6 +5119,50 @@ function renderOpCharts(months, rows){
     options:{ ...common, indexAxis:"y", scales:{ y:{ stacked:true, grid:{display:false}, ticks:{color:ink, font:{size:11}} },
       x:{ stacked:true, grid:{color:grid}, border:{display:false}, ticks:{ color:ink, callback: v => v>=1000 ? (v/1000).toLocaleString()+"k" : v } } } } });
 }
+/* Item filter: tick any number of Odoo items (or a whole type). Nothing ticked = all items. */
+const opItemSel = new Set();
+let opItemQuery = "";
+function opItemLabel(){
+  const el = document.getElementById("op_itemLbl"); if(!el) return;
+  const n = opItemSel.size;
+  el.textContent = !n ? fleetI18n.tr("All items") : n===1 ? [...opItemSel][0] : `${n} ${fleetI18n.tr("items selected")}`;
+}
+function opItemToggle(ev){
+  if(ev) ev.stopPropagation();
+  const pnl = document.getElementById("op_itemPanel");
+  const open = pnl.style.display==="none";
+  pnl.style.display = open ? "block" : "none";
+  if(open){ renderOpItemPanel(); const q = document.getElementById("op_itemQ"); if(q) q.focus(); }
+}
+document.addEventListener("click", ()=>{ const pnl = document.getElementById("op_itemPanel"); if(pnl && pnl.style.display!=="none") pnl.style.display = "none"; });
+function renderOpItemPanel(){
+  const pnl = document.getElementById("op_itemPanel"); if(!pnl) return;
+  const q = opItemQuery.trim().toUpperCase();
+  const list = odooItemList().filter(i=>!q || i.name.toUpperCase().includes(q));
+  const groups = ["fuel","repair","insurance","other"].map(cat=>({cat, items:list.filter(i=>i.auto===cat).sort((a,b)=>a.name.localeCompare(b.name))})).filter(g=>g.items.length);
+  const enc = n => escHtml(JSON.stringify(n));
+  pnl.innerHTML = `<input id="op_itemQ" placeholder="${escHtml(fleetI18n.tr("Search item…"))}" value="${escHtml(opItemQuery)}" oninput="opItemQuery=this.value;renderOpItemPanel();const e=document.getElementById('op_itemQ');e.focus();e.setSelectionRange(e.value.length,e.value.length);" style="width:100%;margin-bottom:6px;">
+    <div style="display:flex;gap:6px;margin-bottom:6px;">
+      <button type="button" class="btn ghost" style="padding:2px 9px;font-size:11px;" onclick="opItemSet(null)">${escHtml(fleetI18n.tr("All items"))}</button>
+      <button type="button" class="btn ghost" style="padding:2px 9px;font-size:11px;" onclick="opItemPanelClose()">✓ ${escHtml(fleetI18n.tr("Done"))}</button>
+      <span style="margin-left:auto;font-size:11px;color:var(--ink-soft);align-self:center;">${opItemSel.size ? opItemSel.size+" "+escHtml(fleetI18n.tr("selected")) : escHtml(fleetI18n.tr("All items"))}</span></div>
+    <div style="max-height:360px;overflow:auto;">${groups.map(g=>{
+      const n = g.items.filter(i=>opItemSel.has(i.name)).length;
+      return `<label style="display:flex;gap:6px;align-items:center;margin:6px 0 2px;font-weight:700;font-size:12px;text-transform:none;letter-spacing:0;border-bottom:1px solid var(--line);padding-bottom:3px;">
+        <input type="checkbox" style="width:auto;" ${n && n===g.items.length?"checked":""} ${n && n<g.items.length?'data-mixed="1"':""} onchange="opItemGroup('${g.cat}',this.checked)"> ${escHtml(fleetI18n.tr(ODOO_TYPE_LABEL[g.cat]))} <span style="font-weight:400;color:var(--ink-soft);">(${g.items.length})</span></label>`
+        + g.items.map(i=>`<label style="display:flex;gap:6px;align-items:center;padding:2px 0 2px 16px;font-size:12px;text-transform:none;letter-spacing:0;font-weight:400;"><input type="checkbox" style="width:auto;" ${opItemSel.has(i.name)?"checked":""} onchange="opItemPick(${enc(i.name)},this.checked)"><span style="flex:1;">${escHtml(i.name)}</span></label>`).join("");
+    }).join("") || `<div style="font-size:12px;color:var(--faint);padding:6px;">—</div>`}</div>`;
+  pnl.querySelectorAll('input[data-mixed]').forEach(x=>x.indeterminate = true);
+}
+function opItemApply(){ renderOpItemPanel(); renderCosting(); }
+function opItemPick(name, on){ if(on) opItemSel.add(name); else opItemSel.delete(name); opItemApply(); }
+function opItemGroup(cat, on){
+  const q = opItemQuery.trim().toUpperCase();
+  odooItemList().filter(i=>i.auto===cat && (!q || i.name.toUpperCase().includes(q))).forEach(i=>{ if(on) opItemSel.add(i.name); else opItemSel.delete(i.name); });
+  opItemApply();
+}
+function opItemSet(){ opItemSel.clear(); opItemApply(); }
+function opItemPanelClose(){ document.getElementById("op_itemPanel").style.display = "none"; }
 function opToggle(key){ if(opOpen.has(key)) opOpen.delete(key); else opOpen.add(key); renderCosting(); }
 function opExpandAll(on){ opOpen.clear(); if(on) opRows().forEach(r=>opOpen.add(r.key)); renderCosting(); }
 function exportOdooPivot(){

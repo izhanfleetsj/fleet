@@ -571,6 +571,8 @@
     ["Purchase Order (PO) — if the job needs one, e.g. collecting premix","Purchase Order (PO) — jika job memerlukan PO, cth. ambil premix"],
     ["Upload (PDF / Photo)","Muat naik (PDF / Gambar)"],
     ["From branch","Dari branch"],
+    ["items selected","item dipilih"],
+    ["Search item…","Cari item…"],
     ["All items","Semua item"],
     ["By type","Ikut jenis"],
     ["Only the newest copy of each vehicle is ticked; older copies and vehicles already in the list are left unticked.","Hanya salinan terbaru setiap kenderaan ditanda; salinan lama dan kenderaan yang sudah ada dalam senarai tidak ditanda."],
