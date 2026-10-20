@@ -571,6 +571,7 @@
     ["Purchase Order (PO) — if the job needs one, e.g. collecting premix","Purchase Order (PO) — jika job memerlukan PO, cth. ambil premix"],
     ["Upload (PDF / Photo)","Muat naik (PDF / Gambar)"],
     ["From branch","Dari branch"],
+    ["Assigned / Cancelled","Assigned / Dibatalkan"],
     ["Add vehicle","Tambah kenderaan"],
     ["Old Vehicle No. (trade in) — one or more","No. Kenderaan Lama (trade in) — satu atau lebih"],
     ["Requesting Branch","Branch Pemohon"],
