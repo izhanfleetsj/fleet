@@ -895,7 +895,7 @@ body:not(.is-admin) .admin-only{display:none !important;}
           </div>
           <div class="form-row" style="grid-template-columns:1fr 1fr;">
             <div><label>Purchase Type</label><select id="pr_type" onchange="document.getElementById('pr_oldWrap').style.visibility=this.value==='TRADE IN'?'visible':'hidden'"><option value="BARU">New</option><option value="TRADE IN">Trade In</option></select></div>
-            <div id="pr_oldWrap" style="visibility:hidden;"><label>Old Vehicle No. (trade in)</label><input id="pr_oldPlate" class="dsp-up" placeholder="e.g. ABC 1234"></div>
+            <div id="pr_oldWrap" style="visibility:hidden;"><label>Old Vehicle No. (trade in) — one or more</label><div id="pr_oldList" style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;"></div><datalist id="prPlateList"></datalist></div>
           </div>
           <div class="form-row" style="grid-template-columns:1fr;">
             <div><label>Reason / Purpose of Purchase</label><textarea id="pr_reason" class="dsp-up" rows="3" placeholder="e.g. FOR PROJECT OPERATIONS OUTSIDE TOWN"></textarea></div>
@@ -6984,7 +6984,19 @@ async function autoSaveDisposed(stageKey, idx){
   renderDisposeKpis();
 }
 /* ---- New vehicle purchase request (green KPI box) ---- */
-const PR_FIELDS = ["pr_by","pr_position","pr_company","pr_oldPlate","pr_reason","pr_model"];
+const PR_FIELDS = ["pr_by","pr_position","pr_company","pr_reason","pr_model"];
+/* Trade-in: several old vehicles can go against one purchase (e.g. buy 1, trade in 3).
+   Stored as item.oldPlates (array) and item.oldPlate ("A, B, C" — used on the printed form). */
+function prOldSet(list){
+  const w = document.getElementById("pr_oldList"); if(!w) return;
+  const dl = document.getElementById("prPlateList");
+  if(dl && !dl.options.length) dl.innerHTML = complianceData.filter(d=>d.plate).map(d=>`<option value="${escHtml(d.plate)}">${escHtml([d.company, d.category, locationBranch(d.location)].filter(Boolean).join(" · "))}</option>`).join("");
+  const vals = (list && list.length ? list : [""]);
+  w.innerHTML = vals.map(v=>`<span style="display:inline-flex;align-items:center;gap:2px;"><input class="pr-old dsp-up" list="prPlateList" value="${escHtml(v)}" placeholder="e.g. ABC 1234" style="width:130px;"><button type="button" class="btn ghost" style="padding:2px 7px;font-size:11px;color:var(--danger);" title="${escHtml(fleetI18n.tr("Remove"))}" onclick="this.parentNode.remove(); if(!document.querySelector('#pr_oldList .pr-old')) prOldSet([]);">✕</button></span>`).join("")
+    + `<button type="button" class="btn ghost" style="padding:4px 10px;font-size:11px;" onclick="prOldAdd()">+ ${escHtml(fleetI18n.tr("Add vehicle"))}</button>`;
+}
+function prOldGet(){ return [...document.querySelectorAll("#pr_oldList .pr-old")].map(i=>i.value.trim().toUpperCase()).filter(Boolean).filter((v,k,a)=>a.indexOf(v)===k); }
+function prOldAdd(){ const cur = [...document.querySelectorAll("#pr_oldList .pr-old")].map(i=>i.value); prOldSet([...cur, ""]); const all = document.querySelectorAll("#pr_oldList .pr-old"); all[all.length-1].focus(); }
 let prEditRef = null, prQuotes = [], prPhotos = [], prRemovedFiles = [];
 function togglePurchaseRequestForm(editRef, slot){
   const f = document.getElementById("purchaseRequestForm");
@@ -7006,7 +7018,8 @@ function togglePurchaseRequestForm(editRef, slot){
   bs.value = item && item.branch ? item.branch : "";
   set("pr_dept", item ? item.dept : (f.parentElement.id==="prSlotDispose" ? "FLEET" : ""));
   document.getElementById("prRequesterMsg").innerHTML = "";
-  if(item){ set("pr_by",item.requestedBy); set("pr_position",item.position); set("pr_company",item.company); set("pr_model",item.model); set("pr_reason",item.reason); set("pr_oldPlate",item.oldPlate); }
+  if(item){ set("pr_by",item.requestedBy); set("pr_position",item.position); set("pr_company",item.company); set("pr_model",item.model); set("pr_reason",item.reason); }
+  prOldSet(item ? (item.oldPlates && item.oldPlates.length ? item.oldPlates : String(item.oldPlate||"").split(/\s*[,\/]\s*/).filter(Boolean)) : []);
   set("pr_type", item && item.purchaseType==="TRADE IN" ? "TRADE IN" : "BARU");
   document.getElementById("pr_oldWrap").style.visibility = document.getElementById("pr_type").value==="TRADE IN" ? "visible" : "hidden";
   prQuotes = item ? JSON.parse(JSON.stringify(item.quotes||[])) : [];
@@ -7096,7 +7109,7 @@ async function submitPurchaseRequest(){
     if(!v("pr_by") || !v("pr_model")){ alert(fleetI18n.tr("Please fill in at least Applicant Name and Type / Model.")); return; }
     Object.assign(item, { date: v("pr_date") || item.date, requestedBy:up("pr_by"), position:up("pr_position"), dept:up("pr_dept"), branch:v("pr_branch"),
       company:up("pr_company"), model:up("pr_model"), reason:up("pr_reason"), purchaseType:v("pr_type"),
-      oldPlate: v("pr_type")==="TRADE IN" ? up("pr_oldPlate") : "",
+      oldPlates: v("pr_type")==="TRADE IN" ? prOldGet() : [], oldPlate: v("pr_type")==="TRADE IN" ? prOldGet().join(", ") : "",
       quotes: prQuotes.filter(q=>q.vendor || q.price!=null || q.file || q.model), photos: prPhotos });
     item.addedAt = item.date.split("-").reverse().join("/");
     // the recommended (else cheapest) quotation becomes the purchase price / supplier
@@ -7122,7 +7135,7 @@ async function submitPurchaseRequest(){
   const item = { kind:"request", uid: Date.now().toString(36) + Math.random().toString(36).slice(2,7),
     serial: nextPurchaseSerial(date.slice(0,4), inbox), date,
     requestedBy:up("pr_by"), position:up("pr_position"), dept:up("pr_dept"), branch:v("pr_branch"),
-    company:up("pr_company"), purchaseType:v("pr_type"), oldPlate: v("pr_type")==="TRADE IN" ? up("pr_oldPlate") : "",
+    company:up("pr_company"), purchaseType:v("pr_type"), oldPlates: v("pr_type")==="TRADE IN" ? prOldGet() : [], oldPlate: v("pr_type")==="TRADE IN" ? prOldGet().join(", ") : "",
     reason:up("pr_reason"), model:up("pr_model"),
     addedAt: date.split("-").reverse().join("/") };
   try{
