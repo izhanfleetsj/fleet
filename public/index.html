@@ -1011,6 +1011,26 @@ body:not(.is-admin) .admin-only{display:none !important;}
           <div class="kpi"><div class="label">Total Annual Premium</div><div class="value mono" id="insPremiumTotal">—</div><div class="foot" id="insPremiumFoot">From premiums keyed in</div></div>
         </div>
 
+        <div class="panel admin-only" id="idbPanel">
+          <div class="panel-head">
+            <h3>Vehicle's Insurance Database — All Policy Years</h3>
+            <span class="sub" style="font-size:11px;color:var(--ink-soft);margin-left:auto;">One record per vehicle per policy year · premium comparison = Gross Premium + Service Tax (stamp duty excluded)</span>
+            <button type="button" class="btn ghost" onclick="importInsDbFromRegister()" title="Create records from the Insurance Register below">⇩ <span>From Insurance Register</span></button>
+            <button type="button" class="btn ghost" onclick="openRecover('idb')" title="Bring back records that were saved before but are missing now">🕘 <span>Recover</span></button>
+            <select id="idbMonth" style="width:auto;" onchange="renderInsuranceDb()" title="Renewal month (policy start date)"></select>
+            <button type="button" class="btn ghost" onclick="printInsuranceDbReport()">🖨 <span>Export PDF report</span></button>
+            <button type="button" class="btn yellow" onclick="openInsDbForm()">+ <span>Add record</span></button>
+          </div>
+          <div id="idbForm" style="display:none;margin-bottom:12px;"></div>
+          <div class="fit-table" style="max-height:560px;overflow:auto;border:1px solid var(--line);border-radius:var(--radius);">
+          <table id="idbTable">
+            <thead style="position:sticky;top:0;background:var(--panel);z-index:1;"><tr id="idbTotals" class="idb-totals"></tr><tr id="idbHeadRow"></tr></thead>
+            <tbody id="idbBody"></tbody>
+          </table>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px;margin-top:8px;"><div id="idbCount" style="font-size:11px;color:var(--ink-soft);"></div><button type="button" class="btn ghost" id="idbClearAllBtn" style="display:none;padding:3px 9px;font-size:10.5px;" onclick="xlClearAll('insdb')">✕ Clear all filters</button></div>
+        </div>
+
         <div class="panel admin-only" id="icPanel">
           <div class="panel-head">
             <h3>Insurance Renewal Comparison</h3>
@@ -1029,25 +1049,6 @@ body:not(.is-admin) .admin-only{display:none !important;}
           </div>
           <div id="icList"></div>
           <div id="icEditor" style="display:none;margin-top:12px;"></div>
-        </div>
-
-        <div class="panel admin-only" id="idbPanel">
-          <div class="panel-head">
-            <h3>Vehicle's Insurance Database — All Policy Years</h3>
-            <span class="sub" style="font-size:11px;color:var(--ink-soft);margin-left:auto;">One record per vehicle per policy year · premium comparison = Gross Premium + Service Tax (stamp duty excluded)</span>
-            <button type="button" class="btn ghost" onclick="importInsDbFromRegister()" title="Create records from the Insurance Register below">⇩ <span>From Insurance Register</span></button>
-            <button type="button" class="btn ghost" onclick="openRecover('idb')" title="Bring back records that were saved before but are missing now">🕘 <span>Recover</span></button>
-            <button type="button" class="btn ghost" onclick="exportInsuranceDb()">⬇ <span>Export Excel</span></button>
-            <button type="button" class="btn yellow" onclick="openInsDbForm()">+ <span>Add record</span></button>
-          </div>
-          <div id="idbForm" style="display:none;margin-bottom:12px;"></div>
-          <div class="fit-table" style="max-height:560px;overflow:auto;border:1px solid var(--line);border-radius:var(--radius);">
-          <table id="idbTable">
-            <thead style="position:sticky;top:0;background:var(--panel);z-index:1;"><tr id="idbTotals" class="idb-totals"></tr><tr id="idbHeadRow"></tr></thead>
-            <tbody id="idbBody"></tbody>
-          </table>
-          </div>
-          <div style="display:flex;align-items:center;gap:10px;margin-top:8px;"><div id="idbCount" style="font-size:11px;color:var(--ink-soft);"></div><button type="button" class="btn ghost" id="idbClearAllBtn" style="display:none;padding:3px 9px;font-size:10.5px;" onclick="xlClearAll('insdb')">✕ Clear all filters</button></div>
         </div>
 
         <div class="panel">
@@ -3053,8 +3054,18 @@ function idbCalcBasic(r){   // without the previous-year lookup (avoids recursio
 }
 const idbMoney = v => v==null || v==="" ? "—" : Number(v).toLocaleString("en-MY",{minimumFractionDigits:2, maximumFractionDigits:2});
 const idbSigned = v => v==null ? "" : v < 0 ? `(${idbMoney(-v)})` : idbMoney(v);
+/* Month filter: the renewal month = policy start date (end date when there is no start). */
+const idbMonthOf = r => String(r.start || r.end || "").slice(0,7);
+function idbMonthSel(){ return (document.getElementById("idbMonth")||{}).value || ""; }
+function idbMonthOptions(){
+  const el = document.getElementById("idbMonth"); if(!el) return;
+  const keep = el.value;
+  const ms = [...new Set(insuranceDb.map(idbMonthOf).filter(m=>/^\d{4}-\d{2}$/.test(m)))].sort().reverse();
+  el.innerHTML = `<option value="">${escHtml(fleetI18n.tr("All months"))}</option>` + ms.map(m=>`<option value="${m}">${escHtml(odooMonthName(m))}</option>`).join("");
+  if([...el.options].some(o=>o.value===keep)) el.value = keep;
+}
 xlRegister("insdb", {
-  data: ()=>insuranceDb,
+  data: ()=>{ const m = idbMonthSel(); return m ? insuranceDb.filter(r=>idbMonthOf(r)===m) : insuranceDb; },
   render: ()=>renderInsuranceDb(),
   cols: [
     {key:"policyYear", label:"Policy Year", num:true},
@@ -3075,6 +3086,7 @@ xlRegister("insdb", {
 });
 function renderInsuranceDb(){
   const body = document.getElementById("idbBody"); if(!body) return;
+  idbMonthOptions();
   document.getElementById("idbHeadRow").innerHTML = xlHeaderHtml("insdb").replace(/<th>/g,(m,i)=>m) + `<th></th>`;
   const rows = xlRows("insdb");
   if(!XL_TABLES.insdb.sort) rows.sort((a,b)=>String(idbCalc(a).plate).localeCompare(String(idbCalc(b).plate)) || Number(a.policyYear)-Number(b.policyYear));
@@ -3246,6 +3258,64 @@ function exportInsuranceDb(){
   const ws = XLSX.utils.aoa_to_sheet([["VEHICLE'S INSURANCE DATABASE - ALL POLICY YEARS"], [], head, ...rows]);
   const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Insurance Database");
   XLSX.writeFile(wb, `Insurance_Database_${APP_TODAY_ISO}.xlsx`);
+}
+/* PDF report of the Insurance Database (rows shown: month + column filters). Opens a print
+   window — choose "Save as PDF". A4 landscape, summary boxes, detail table, totals, sign-off. */
+function printInsuranceDbReport(){
+  const rows = xlRows("insdb").slice().sort((a,b)=>String(idbMonthOf(a)).localeCompare(String(idbMonthOf(b))) || String(idbCalc(a).plate).localeCompare(String(idbCalc(b).plate)));
+  if(!rows.length){ A(fleetI18n.tr("No records to report for this selection.")); return; }
+  const w = window.open("", "_blank"); if(!w){ A(fleetI18n.tr("Please allow pop-ups to print the report.")); return; }
+  const e = x => escHtml(x==null ? "" : String(x));
+  const m = idbMonthSel();
+  const period = m ? odooMonthName(m).toUpperCase() : "ALL MONTHS";
+  const calc = rows.map(r=>[r, idbCalc(r)]);
+  const sum = f => calc.reduce((t,[r,c])=>t + (Number(f(r,c))||0), 0);
+  const tSI = sum(r=>idbN(r.sumInsured)), tGross = sum((r,c)=>c.gross), tTax = sum((r,c)=>c.tax), tStamp = sum((r,c)=>c.stamp), tTotal = sum((r,c)=>c.total), tEx = sum((r,c)=>c.exSd);
+  const withPrev = calc.filter(([,c])=>c.change!=null), tChange = withPrev.reduce((t,[,c])=>t+c.change,0), tPrev = withPrev.reduce((t,[,c])=>t+c.prevEx,0);
+  const nSave = calc.filter(([,c])=>c.verdict==="Saving").length, nInc = calc.filter(([,c])=>c.verdict==="Increase").length;
+  const money = v => v==null || v==="" ? "-" : Number(v).toLocaleString("en-MY",{minimumFractionDigits:2, maximumFractionDigits:2});
+  const signed = v => v==null ? "-" : v<0 ? `(${money(-v)})` : money(v);
+  const box = (l,v,sub="") => `<td class="box"><div class="bl">${l}</div><div class="bv">${v}</div>${sub?`<div class="bs">${sub}</div>`:""}</td>`;
+  const body = calc.map(([r,c],k)=>`<tr>
+    <td class="c">${k+1}</td><td><b>${e(c.plate)}</b></td><td>${e(c.company)}</td><td>${e(c.vtype||"")}</td><td>${e(r.operator)}</td>
+    <td class="c">${e(isoToDmy(r.start))}<br>${e(isoToDmy(r.end))}</td><td>${e(r.cover)}</td>
+    <td class="r">${money(r.sumInsured)}</td><td class="r">${r.ncd!=null&&r.ncd!==""?Number(r.ncd).toFixed(2)+"%":"-"}</td>
+    <td class="r">${money(r.basic)}</td><td class="r">${money(c.gross)}</td><td class="r">${money(c.tax)}</td><td class="r">${money(c.stamp)}</td>
+    <td class="r"><b>${money(c.total)}</b></td><td class="r">${c.prevEx!=null?money(c.prevEx):"-"}</td>
+    <td class="r ${c.change<0?"sv":c.change>0?"in":""}">${signed(c.change)}${c.changePct!=null?`<br><span class="pct">${c.changePct>0?"+":""}${c.changePct.toFixed(1)}%</span>`:""}</td>
+    <td class="c">${e(c.verdict==="New / no prior-year record" ? "New" : c.verdict)}</td></tr>`).join("");
+  const css = `*{box-sizing:border-box;} body{font-family:Calibri,Arial,Helvetica,sans-serif;color:#111;margin:0;font-size:10px;}
+    @page{size:A4 landscape;margin:10mm 9mm 12mm;}
+    .hd{display:flex;justify-content:space-between;align-items:flex-end;border-bottom:2.5px solid #111;padding-bottom:6px;margin-bottom:8px;}
+    .hd h1{font-size:16px;margin:0;letter-spacing:.03em;} .hd .org{font-size:11px;font-weight:700;color:#555;letter-spacing:.08em;}
+    .hd .meta{text-align:right;font-size:10px;line-height:1.5;} .hd .meta b{font-size:12px;}
+    table{border-collapse:collapse;width:100%;}
+    .boxes td.box{border:1px solid #bbb;padding:6px 8px;width:16.66%;vertical-align:top;} .bl{font-size:8.5px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:.05em;} .bv{font-size:14px;font-weight:700;margin-top:2px;} .bs{font-size:8.5px;color:#555;}
+    .boxes{border-spacing:6px 0;border-collapse:separate;margin:0 -6px 10px;width:calc(100% + 12px);}
+    .dt th{background:#1f3b57;color:#fff;font-size:8.5px;text-transform:uppercase;padding:5px 4px;border:1px solid #1f3b57;text-align:center;}
+    .dt td{border:1px solid #ccc;padding:4px;font-size:9.5px;vertical-align:top;} .dt tbody tr:nth-child(even) td{background:#f5f7fa;}
+    .dt tfoot td{background:#e6edf4;font-weight:700;border:1px solid #999;padding:5px 4px;}
+    thead{display:table-header-group;} tfoot{display:table-row-group;} tr{page-break-inside:avoid;}
+    .r{text-align:right;white-space:nowrap;} .c{text-align:center;} .sv{color:#1a7f37;} .in{color:#b42318;} .pct{font-size:8.5px;}
+    .note{font-size:8.5px;color:#555;margin-top:6px;}
+    .sign{display:flex;gap:24px;margin-top:26px;page-break-inside:avoid;} .sign div{flex:1;border-top:1px solid #111;padding-top:4px;font-size:9.5px;} .sign b{display:block;margin-bottom:22px;}`;
+  w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Insurance Report — ${e(period)}</title><style>${css}</style></head><body>
+    <div class="hd"><div><div class="org">FLEET SWIS GROUP</div><h1>VEHICLE INSURANCE REPORT</h1></div>
+      <div class="meta">Renewal month: <b>${e(period)}</b><br>Printed: ${e(new Date().toLocaleString("en-GB"))}</div></div>
+    <table class="boxes"><tr>
+      ${box("Vehicles", rows.length)}${box("Total Sum Insured (RM)", money(tSI))}${box("Gross Premium (RM)", money(tGross))}
+      ${box("Total Payable (RM)", money(tTotal), `Service tax ${money(tTax)} · Stamp duty ${money(tStamp)}`)}
+      ${box("vs Previous Year (RM)", signed(tChange), withPrev.length ? `${withPrev.length} vehicle(s) with prior year · ${tPrev? (tChange/tPrev*100>0?"+":"")+(tChange/tPrev*100).toFixed(1)+"%":""}` : "No prior-year records")}
+      ${box("Saving / Increase", `${nSave} / ${nInc}`, "vehicles cheaper / dearer")}
+    </tr></table>
+    <table class="dt"><thead><tr><th>No</th><th>Vehicle No</th><th>Company</th><th>Type</th><th>Insurer</th><th>Period<br>Start / End</th><th>Cover</th>
+      <th>Sum Insured</th><th>NCD</th><th>Basic Premium</th><th>Gross Premium</th><th>Service Tax</th><th>Stamp Duty</th><th>Total Payable</th><th>Prev. Year (excl. SD)</th><th>Change</th><th>Result</th></tr></thead>
+    <tbody>${body}</tbody>
+    <tfoot><tr><td colspan="7">TOTAL (${rows.length} vehicles)</td><td class="r">${money(tSI)}</td><td></td><td class="r">${money(sum(r=>idbN(r.basic)))}</td><td class="r">${money(tGross)}</td><td class="r">${money(tTax)}</td><td class="r">${money(tStamp)}</td><td class="r">${money(tTotal)}</td><td class="r">${money(tPrev)}</td><td class="r">${signed(tChange)}</td><td></td></tr></tfoot></table>
+    <div class="note">Change = (Gross premium after rebate + service tax) vs the previous policy year, stamp duty excluded. Brackets = saving.</div>
+    <div class="sign"><div><b>Prepared by</b>Fleet Department</div><div><b>Checked by</b>Head of Department</div><div><b>Approved by</b>Management</div></div>
+    <script>window.onload=function(){window.print();}<\/script></body></html>`);
+  w.document.close();
 }
 const IC_PRINT_CSS = `*{box-sizing:border-box;} body{font-family:Calibri,Arial,Helvetica,sans-serif;font-size:11px;color:#000;margin:0;}
   .page{width:210mm;min-height:296mm;margin:0 auto;padding:16mm 14mm;page-break-after:always;} .page:last-child{page-break-after:auto;}

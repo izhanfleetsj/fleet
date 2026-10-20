@@ -571,6 +571,8 @@
     ["Purchase Order (PO) — if the job needs one, e.g. collecting premix","Purchase Order (PO) — jika job memerlukan PO, cth. ambil premix"],
     ["Upload (PDF / Photo)","Muat naik (PDF / Gambar)"],
     ["From branch","Dari branch"],
+    ["Export PDF report","Export laporan PDF"],
+    ["No records to report for this selection.","Tiada rekod untuk dilaporkan bagi pilihan ini."],
     ["Waiting for review","Menunggu semakan"],
     ["Branch","Branch"],
     ["Fixed Assets","Aset Tetap"],
