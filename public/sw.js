@@ -1,7 +1,7 @@
 /* Fleet Ops service worker — makes the app installable and keeps the app shell
    available on a weak connection. Data (/api/*) is never cached: it always
    comes live from the server so staff don't see stale records. */
-const CACHE = "fleet-ops-v130";
+const CACHE = "fleet-ops-v131";
 const SHELL = ["/", "/app-storage.js", "/i18n.js", "/wa-parse.js", "/manifest.webmanifest", "/icon.svg", "/icon-192.png", "/vendor/chart.umd.js", "/vendor/xlsx.full.min.js", "/vendor/pdf.min.js"];
 
 self.addEventListener("install", e => {

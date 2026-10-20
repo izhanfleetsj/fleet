@@ -571,6 +571,15 @@
     ["Purchase Order (PO) — if the job needs one, e.g. collecting premix","Purchase Order (PO) — jika job memerlukan PO, cth. ambil premix"],
     ["Upload (PDF / Photo)","Muat naik (PDF / Gambar)"],
     ["From branch","Dari branch"],
+    ["Only the newest copy of each vehicle is ticked; older copies and vehicles already in the list are left unticked.","Hanya salinan terbaru setiap kenderaan ditanda; salinan lama dan kenderaan yang sudah ada dalam senarai tidak ditanda."],
+    ["All months","Semua bulan"],
+    ["Recover","Pulihkan"],
+    ["Recover insurance comparisons","Pulihkan comparison insurans"],
+    ["Recover insurance database records","Pulihkan rekod database insurans"],
+    ["Looking in the saved history…","Mencari dalam sejarah simpanan…"],
+    ["last saved","kali terakhir disimpan"],
+    ["Nothing missing — every record in the saved history is in the current list.","Tiada yang hilang — semua rekod dalam sejarah simpanan ada dalam senarai sekarang."],
+    ["Restore selected","Pulihkan yang dipilih"],
     ["Monthly Cost","Kos Bulanan"],
     ["Top 10 Vehicles","10 Kenderaan Tertinggi"],
     ["By item type · hover a bar for the amounts","Ikut jenis item · hover pada bar untuk lihat jumlah"],
@@ -965,6 +974,8 @@
   ];
 
   const TEMPLATES = [
+    ["{a} record(s) were saved before but are not in the current list. Tick the ones to bring back (records you deleted on purpose are listed too).","{a} rekod pernah disimpan tetapi tiada dalam senarai sekarang. Tanda yang hendak dipulihkan (rekod yang sengaja dipadam juga tersenarai)."],
+    ["{a} record(s) restored.","{a} rekod dipulihkan."],
     ["Jobs {a} = the Assigned card. Units {b} = Hire {c} + Own {d} (the Hire vs Own card).","Job {a} = kad Assigned. Unit {b} = Sewa {c} + Sendiri {d} (kad Hire vs Own)."],
     ["{a} job(s) needed more than one vehicle, so units are {b} more than jobs:","{a} job memerlukan lebih dari satu kenderaan, jadi unit lebih {b} dari bilangan job:"],
     ["Excluding {a} cancelled","Tidak termasuk {a} dibatalkan"],

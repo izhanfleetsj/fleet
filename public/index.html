@@ -537,6 +537,16 @@ body:not(.is-admin) .admin-only{display:none !important;}
     </div>
   </div>
 </div>
+<div class="modal-backdrop" id="recoverModal" style="display:none;" onclick="if(event.target===this)closeRecover()">
+  <div class="modal-card" role="dialog" aria-modal="true" style="max-width:640px;width:94vw;">
+    <div class="panel-head" style="margin-bottom:10px;"><h3 id="recoverTitle" style="font-size:13px;">Recover</h3></div>
+    <div id="recoverBody"></div>
+    <div class="form-actions" style="margin-top:12px;">
+      <button class="btn ghost" onclick="closeRecover()">Close</button>
+      <button class="btn yellow" id="recoverGo" onclick="doRecover()">Restore selected</button>
+    </div>
+  </div>
+</div>
 <div class="modal-backdrop" id="loginPanel" style="display:none;" onclick="if(event.target===this)closeAdminLogin()">
   <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="loginTitle">
     <div class="panel-head" style="margin-bottom:10px;"><h3 id="loginTitle" style="font-size:13px;">Admin Login — Full Access</h3></div>
@@ -1013,6 +1023,8 @@ body:not(.is-admin) .admin-only{display:none !important;}
             <button type="button" class="btn ghost" onclick="printInsMonthlySummary()">🖨 <span>Monthly summary</span></button>
             <button type="button" class="btn ghost" onclick="icSyncNow()" title="Copy every ★ selected quote to the Insurance Register now">🔄 <span>Sync to register</span></button>
             <label class="btn ghost" style="cursor:pointer;margin:0;display:inline-flex;align-items:center;gap:4px;text-transform:none;letter-spacing:0;" title="Upload the broker's Vehicle Insurance Comparison PDF — the details are filled in automatically">📄 <span>Upload comparison PDF</span><input type="file" accept="application/pdf,.pdf" multiple hidden onchange="importInsComparisonPdfs(this)"></label>
+            <label style="display:inline-flex;align-items:center;gap:4px;margin:0;text-transform:none;letter-spacing:0;font-size:12px;"><input type="checkbox" id="icAllMonths" style="width:auto;" onchange="renderInsComparisons()"> <span>All months</span></label>
+            <button type="button" class="btn ghost" onclick="openRecover('ic')" title="Bring back comparisons that were saved before but are missing now">🕘 <span>Recover</span></button>
             <span id="icImportMsg" style="font-size:11.5px;color:var(--ink-soft);"></span>
           </div>
           <div id="icList"></div>
@@ -1038,6 +1050,7 @@ body:not(.is-admin) .admin-only{display:none !important;}
             <h3>Vehicle's Insurance Database — All Policy Years</h3>
             <span class="sub" style="font-size:11px;color:var(--ink-soft);margin-left:auto;">One record per vehicle per policy year · premium comparison = Gross Premium + Service Tax (stamp duty excluded)</span>
             <button type="button" class="btn ghost" onclick="importInsDbFromRegister()" title="Create records from the Insurance Register below">⇩ <span>From Insurance Register</span></button>
+            <button type="button" class="btn ghost" onclick="openRecover('idb')" title="Bring back records that were saved before but are missing now">🕘 <span>Recover</span></button>
             <button type="button" class="btn ghost" onclick="exportInsuranceDb()">⬇ <span>Export Excel</span></button>
             <button type="button" class="btn yellow" onclick="openInsDbForm()">+ <span>Add record</span></button>
           </div>
@@ -2540,6 +2553,80 @@ async function deleteInsurancePdf(id){
    from each insurer, grouped by broker / agency). Totals are worked out automatically.
    Prints: the vehicle comparison (like the broker's "Vehicle Insurance Comparison") and a
    monthly summary of every vehicle's quotes (cheapest / selected highlighted). */
+/* ---- Saving a list of records ({id,…}) without losing other people's work ----
+   Before saving, the server copy is re-read and merged per record: records changed here win,
+   records added elsewhere are kept, records deleted here are dropped. mergeBases holds the
+   copy last loaded/saved, to tell "deleted here" from "added elsewhere". If this page never
+   loaded the list (e.g. admin logged in after the page opened), nothing on the server is lost. */
+const mergeBases = {};
+function mergeBaseSet(key, arr){ mergeBases[key] = new Map((arr||[]).filter(x=>x && x.id).map(x=>[x.id, JSON.stringify(x)])); }
+async function mergeSaveList(key, arr){
+  const r = await window.storage.get(key, true);           // throws if the server can't be read → nothing is overwritten
+  const v = r && JSON.parse(r.value); const server = Array.isArray(v) ? v : [];
+  const base = mergeBases[key] || new Map();
+  const local = new Map(arr.filter(x=>x && x.id).map(x=>[x.id, x]));
+  const changedHere = x => !base.has(x.id) || base.get(x.id)!==JSON.stringify(x);
+  const srv = new Map(server.filter(x=>x && x.id).map(x=>[x.id, x]));
+  const out = [];
+  arr.forEach(x=>{
+    if(!x || !x.id){ out.push(x); return; }
+    if(changedHere(x)) out.push(x);                    // new or edited here
+    else if(srv.has(x.id)) out.push(srv.get(x.id));    // unchanged here → keep the server's (maybe newer) copy
+    // else: unchanged here and deleted elsewhere → drop
+  });
+  server.forEach(x=>{ if(x && x.id && !local.has(x.id) && !base.has(x.id)) out.push(x); });   // added elsewhere
+  await window.storage.set(key, JSON.stringify(out), true);
+  arr.length = 0; out.forEach(x=>arr.push(x));
+  mergeBaseSet(key, arr);
+  return arr;
+}
+/* Records that were saved before (server keeps the last 50 versions of each key) but are not
+   in the current list — e.g. lost to an overwrite. Newest saved copy of each record. */
+async function historyMissing(key, current){
+  const r = await fetch("/api/history/" + encodeURIComponent(key), { credentials:"same-origin" });
+  if(!r.ok){ let m = "HTTP " + r.status; try{ m = (await r.json()).error || m; }catch(e){} throw new Error(m); }
+  const { versions } = await r.json();
+  const have = new Set(current.map(x=>x && x.id)), found = new Map();
+  (versions||[]).forEach(ver=>{ let list; try{ list = JSON.parse(ver.value); }catch(e){ return; }
+    if(Array.isArray(list)) list.forEach(x=>{ if(x && x.id && !have.has(x.id) && !found.has(x.id)) found.set(x.id, { rec:x, savedAt:ver.saved_at }); }); });
+  return [...found.values()];
+}
+let recoverCtx = null;
+async function openRecover(kind){
+  const cfg = kind==="ic"
+    ? { key:IC_KEY, list:()=>insComparisons, same: x=>`${x.plate}|${x.month}`, title:"Recover insurance comparisons", desc: x=>`${x.plate||"—"} · ${x.month||""} · ${(x.quotes||[]).length} quotation(s)${x.selected!=null?" · ★":""}`, save: async()=>{ await persistInsComparisons(); renderInsComparisons(); } }
+    : { key:IDB_KEY, list:()=>insuranceDb, same: x=>`${x.plate}|${x.policyYear}`, title:"Recover insurance database records", desc: x=>`${x.plate||"—"} · ${x.policyYear||""} · ${x.insurer||""}`, save: async()=>{ await persistInsuranceDb(); renderInsuranceDb(); } };
+  const box = document.getElementById("recoverModal"), body = document.getElementById("recoverBody");
+  document.getElementById("recoverTitle").textContent = fleetI18n.tr(cfg.title);
+  body.innerHTML = `<div style="font-size:12px;color:var(--ink-soft);">${escHtml(fleetI18n.tr("Looking in the saved history…"))}</div>`;
+  box.style.display = "flex";
+  try{
+    // compare against the server copy too, so records only missing on this page are not offered twice
+    try{ const r = await window.storage.get(cfg.key, true); const v = r && JSON.parse(r.value); if(Array.isArray(v)) v.forEach(x=>{ if(x && x.id && !cfg.list().some(y=>y.id===x.id)) cfg.list().push(x); }); mergeBaseSet(cfg.key, cfg.list()); }catch(e){}
+    const miss = (await historyMissing(cfg.key, cfg.list())).sort((a,b)=>String(b.savedAt).localeCompare(String(a.savedAt)));
+    // tick only the newest copy of each vehicle + month (year), and none already in the list
+    const taken = new Set(cfg.list().map(cfg.same));
+    miss.forEach(m=>{ const k = cfg.same(m.rec); m.pick = !taken.has(k); taken.add(k); });
+    recoverCtx = { cfg, miss };
+    body.innerHTML = miss.length
+      ? `<div style="font-size:12px;color:var(--ink-soft);margin-bottom:8px;">${escHtml(fleetI18n.tr(`${miss.length} record(s) were saved before but are not in the current list. Tick the ones to bring back (records you deleted on purpose are listed too).`))}<br>${escHtml(fleetI18n.tr("Only the newest copy of each vehicle is ticked; older copies and vehicles already in the list are left unticked."))}</div>
+         <div style="max-height:55vh;overflow:auto;border:1px solid var(--line);border-radius:var(--radius);">${miss.map((m,k)=>`<label style="display:flex;gap:8px;align-items:center;padding:6px 10px;border-bottom:1px dashed var(--line);text-transform:none;letter-spacing:0;font-size:12px;"><input type="checkbox" style="width:auto;" ${m.pick?"checked":""} data-k="${k}"><span style="flex:1;font-weight:600;">${escHtml(cfg.desc(m.rec))}</span><span style="font-size:10.5px;color:var(--ink-soft);">${escHtml(fleetI18n.tr("last saved"))} ${escHtml(new Date(m.savedAt).toLocaleString("en-GB"))}</span></label>`).join("")}</div>`
+      : `<div style="font-size:12px;">✓ ${escHtml(fleetI18n.tr("Nothing missing — every record in the saved history is in the current list."))}</div>`;
+    document.getElementById("recoverGo").style.display = miss.length ? "" : "none";
+    if(kind==="ic") renderInsComparisons(); else renderInsuranceDb();
+  }catch(e){ body.innerHTML = `<div style="color:var(--danger);font-size:12px;">✕ ${escHtml(e.message)}</div>`; document.getElementById("recoverGo").style.display = "none"; }
+}
+async function doRecover(){
+  if(!recoverCtx) return;
+  const picks = [...document.querySelectorAll('#recoverBody input[type=checkbox]:checked')].map(i=>recoverCtx.miss[+i.dataset.k].rec);
+  if(!picks.length){ closeRecover(); return; }
+  picks.forEach(x=>recoverCtx.cfg.list().push(x));
+  await recoverCtx.cfg.save();
+  A(fleetI18n.tr(`${picks.length} record(s) restored.`));
+  closeRecover();
+}
+function closeRecover(){ document.getElementById("recoverModal").style.display = "none"; recoverCtx = null; }
+
 const IC_KEY = "fleetInsuranceComparisons_v1";
 let insComparisons = [], icEditId = null;
 const IC_MONTHS_MS = ["JANUARI","FEBRUARI","MAC","APRIL","MEI","JUN","JULAI","OGOS","SEPTEMBER","OKTOBER","NOVEMBER","DISEMBER"];
@@ -2568,10 +2655,10 @@ function icCalc(q, taxRate, ncd){
 }
 function icBlankQuote(broker, insurer){ return { broker:broker||"", insurer:insurer||"", plan:"COMPREHENSIVE", waiver:"YES", stamp:10 }; }
 async function loadInsComparisons(){
-  try{ const r = await window.storage.get(IC_KEY, true); const v = r && JSON.parse(r.value); if(Array.isArray(v)) insComparisons = v; }catch(e){}
+  try{ const r = await window.storage.get(IC_KEY, true); const v = r && JSON.parse(r.value); if(Array.isArray(v)){ insComparisons.length = 0; v.forEach(x=>insComparisons.push(x)); mergeBaseSet(IC_KEY, insComparisons); } }catch(e){}
 }
 async function persistInsComparisons(){
-  try{ await window.storage.set(IC_KEY, JSON.stringify(insComparisons), true); setSyncStatus("✓ " + fleetI18n.tr("Saved") + " " + nowTimeStr()); }
+  try{ await mergeSaveList(IC_KEY, insComparisons); setSyncStatus("✓ " + fleetI18n.tr("Saved") + " " + nowTimeStr()); }
   catch(e){ A(fleetI18n.tr("Could not save — please try again.")); }
 }
 const icMonthVal = () => { const m = document.getElementById("icMonth"); if(m && !m.value) m.value = APP_TODAY_ISO.slice(0,7); return m ? m.value : APP_TODAY_ISO.slice(0,7); };
@@ -2597,11 +2684,13 @@ function renderInsComparisons(){
   const rest = complianceData.filter(d=>!due.includes(d)).sort((a,b)=>String(a.plate).localeCompare(String(b.plate)));
   const opt = d => `<option value="${d.id}">${escHtml(d.plate)} — ${escHtml(d.company)}${d.insurance?` · ${escHtml(d.insurance)}`:""}</option>`;
   sel.innerHTML = `<option value="">${escHtml(fleetI18n.tr("— Select vehicle —"))}</option>` + (due.length?`<optgroup label="${escHtml(fleetI18n.tr("Insurance expires this month"))}">${due.map(opt).join("")}</optgroup>`:"") + `<optgroup label="${escHtml(fleetI18n.tr("All vehicles"))}">${rest.map(opt).join("")}</optgroup>`;
-  const rows = icSortByRoadtax(insComparisons.filter(c=>c.month===ym));
+  const all = (document.getElementById("icAllMonths")||{}).checked;
+  const rows = all ? insComparisons.slice().sort((a,b)=>String(b.month).localeCompare(String(a.month)) || String(a.plate).localeCompare(String(b.plate)))
+                   : icSortByRoadtax(insComparisons.filter(c=>c.month===ym));
   list.innerHTML = rows.length ? `<div class="fit-table" style="border:1px solid var(--line);border-radius:var(--radius);"><table>
     <thead><tr><th>${escHtml(fleetI18n.tr("Vehicle No"))}</th><th>${escHtml(fleetI18n.tr("Company"))}</th><th>${escHtml(fleetI18n.tr("Quotations"))}</th><th>${escHtml(fleetI18n.tr("Lowest / selected"))}</th><th>${escHtml(fleetI18n.tr("Insurance Register"))}</th><th></th></tr></thead>
     <tbody>${rows.map(c=>{ const b = icBest(c), q = b!=null ? c.quotes[b] : null;
-      return `<tr><td style="font-weight:600;">${escHtml(c.plate)}</td><td>${escHtml(c.owner||"")}</td><td>${(c.quotes||[]).length}</td>
+      return `<tr><td style="font-weight:600;">${escHtml(c.plate)}${all?`<br><span style="font-size:10.5px;font-weight:400;color:var(--ink-soft);">${escHtml(c.month ? odooMonthName(c.month) : "")}</span>`:""}</td><td>${escHtml(c.owner||"")}</td><td>${(c.quotes||[]).length}</td>
         <td>${q ? `${escHtml(q.broker||"")} · <b>${escHtml(q.insurer||"")}</b> — RM ${icFmt(icCalc(q,c.taxRate,c.ncd).total)}${c.selected!=null?" ★":""}` : "—"}</td>
         <td>${icRegisterCell(c)}</td>
         <td style="white-space:nowrap;text-align:right;"><button type="button" class="btn ghost" style="padding:3px 9px;font-size:11px;" onclick="editInsComparison('${c.id}')">✎ <span>${escHtml(fleetI18n.tr("Edit"))}</span></button>
@@ -2910,9 +2999,9 @@ async function importInsComparisonPdfs(input){
    previous policy year (green). Premium comparison = Gross Premium + Service Tax. */
 const IDB_KEY = "fleetInsuranceDb_v1";
 let insuranceDb = [], idbEditId = null;
-async function loadInsuranceDb(){ try{ const r = await window.storage.get(IDB_KEY, true); const v = r && JSON.parse(r.value); if(Array.isArray(v)) insuranceDb = v; }catch(e){} }
+async function loadInsuranceDb(){ try{ const r = await window.storage.get(IDB_KEY, true); const v = r && JSON.parse(r.value); if(Array.isArray(v)){ insuranceDb.length = 0; v.forEach(x=>insuranceDb.push(x)); mergeBaseSet(IDB_KEY, insuranceDb); } }catch(e){} }
 async function persistInsuranceDb(){
-  try{ await window.storage.set(IDB_KEY, JSON.stringify(insuranceDb), true); setSyncStatus("✓ " + fleetI18n.tr("Saved") + " " + nowTimeStr()); }
+  try{ await mergeSaveList(IDB_KEY, insuranceDb); setSyncStatus("✓ " + fleetI18n.tr("Saved") + " " + nowTimeStr()); }
   catch(e){ A(fleetI18n.tr("Could not save — please try again.")); }
 }
 const IDB_INPUTS = [   // [key, label, type]
@@ -3465,6 +3554,9 @@ async function submitAdminLogin(){
   currentRole = "admin";
   currentBranch = null;
   closeAdminLogin();
+  // admin-only data is not loaded for visitors — load it now, before anything can be saved over it
+  await loadInsComparisons(); await loadInsuranceDb(); await loadOdooPo();
+  try{ renderInsurance(); }catch(e){} try{ renderCosting(); }catch(e){}
   updateComplianceRoleUI();
   document.querySelector('.nav-btn[data-view="overview"]').click();   // admin lands on the Dashboard
   renderComplianceTable();
