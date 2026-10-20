@@ -651,7 +651,7 @@ body:not(.is-admin) .admin-only{display:none !important;}
             <span class="sub" style="font-size:11px;color:var(--ink-soft);">Auto-flagged from Repair, Hiring &amp; Dispose modules</span>
           </div>
 <div style="overflow-x:auto;"><table>
-            <thead><tr><th>Vehicle</th><th>Module</th><th>Item</th><th>Due / Status</th><th>Priority</th></tr></thead>
+            <thead><tr><th>Vehicle</th><th>Branch</th><th>Module</th><th>Item</th><th>Due / Status</th><th>Priority</th></tr></thead>
             <tbody id="attentionBody"></tbody>
           </table></div>
         </div>
@@ -3839,7 +3839,8 @@ function renderOverview(){
 
   // attention table — scoped to the same company/branch selection
   const rows = [];
-  // [vehicle, module label, page to open, item, due / status, priority badge]
+  // [vehicle, module label, page to open, item, due / status, priority badge, branch]
+  const plateBranch = plate => { const k = utilPlateKey(String(plate||"").split(" — ")[0]); const d = complianceData.find(x=>utilPlateKey(x.plate)===k); return d ? locationBranch(d.location) : ""; };
   const earliest = dates => dates.slice().sort((x,y)=>dmyToIso(x).localeCompare(dmyToIso(y)))[0];
   crScope.filter(d=>rowHasStatus(d,"overdue")).forEach(d=>{
     const comp = [], ins = [];
@@ -3849,17 +3850,18 @@ function renderOverview(){
     if(d.apadStatus==="overdue") comp.push(["APAD", d.apad]);
     if(d.insuranceStatus==="overdue") ins.push(["Insurance", d.insurance]);
     const veh = escHtml(d.company+" — "+d.plate);
-    if(comp.length) rows.push([veh, "Compliance Register", "compliance", comp.map(([k,v])=>`${fleetI18n.tr(k)} ${v}`).join(", "), fleetI18n.tr("Expired")+" "+earliest(comp.map(x=>x[1])), badge("Overdue","danger")]);
-    if(ins.length) rows.push([veh, "Insurance", "insurance", `${fleetI18n.tr("Insurance")} ${ins[0][1]}`, fleetI18n.tr("Expired")+" "+ins[0][1], badge("Overdue","danger")]);
+    const br = locationBranch(d.location);
+    if(comp.length) rows.push([veh, "Compliance Register", "compliance", comp.map(([k,v])=>`${fleetI18n.tr(k)} ${v}`).join(", "), fleetI18n.tr("Expired")+" "+earliest(comp.map(x=>x[1])), badge("Overdue","danger"), br]);
+    if(ins.length) rows.push([veh, "Insurance", "insurance", `${fleetI18n.tr("Insurance")} ${ins[0][1]}`, fleetI18n.tr("Expired")+" "+ins[0][1], badge("Overdue","danger"), br]);
   });
-  tickets.filter(t=>t.priority==="High" && t.status!=="Completed" && ticketInGlobalScope(t)).forEach(t=>rows.push([escHtml(t.vehicle), "Workshop Ticket", "repair", escHtml(`${t.id}: ${t.issue}`), escHtml(fleetI18n.tr(t.status)), badge("High","danger")]));
-  hiringRecords.filter(h=>h.status==="New" && inGlobalScopeHiring(h)).forEach(h=>rows.push([escHtml(h.unit), "Hiring", "hiring", escHtml(T("Belum di-assign")+" — "+h.company), escHtml(h.tarikh), badge("New","warn")]));
+  tickets.filter(t=>t.priority==="High" && t.status!=="Completed" && ticketInGlobalScope(t)).forEach(t=>rows.push([escHtml(t.vehicle), "Workshop Ticket", "repair", escHtml(`${t.id}: ${t.issue}`), escHtml(fleetI18n.tr(t.status)), badge("High","danger"), t.branch || plateBranch(t.vehicle)]));
+  hiringRecords.filter(h=>h.status==="New" && inGlobalScopeHiring(h)).forEach(h=>rows.push([escHtml(h.unit), "Hiring", "hiring", escHtml(T("Belum di-assign")+" — "+h.company), escHtml(h.tarikh), badge("New","warn"), h.branch]));
   dailyMovements.filter(m=>m.date===APP_TODAY_ISO && (m.problems||[]).length && (!GLOBAL_BRANCH || m.branch===GLOBAL_BRANCH)).forEach(m=>
-    rows.push([escHtml(m.plate)+" — "+escHtml(m.driver), "Daily Checklist", "external", escHtml((m.problems||[]).map(k=>fleetI18n.tr((DM_CHECK_ITEMS.find(x=>x[0]===k)||[k,k])[1])).join(", ")+(m.checkNote?" — "+m.checkNote:"")), escHtml(m.branch||"—"), badge("Check","warn")]));
-  if(!scoped) disposePipeline.requested.forEach(d=>rows.push([escHtml(`${d.model||d.category||d.veh||""}${Number(d.qty)>1?" ×"+d.qty:""}${d.company?" — "+d.company:""}`), "New / Dispose", "dispose", escHtml(fleetI18n.tr("New vehicle purchase request")+(d.reason?" — "+d.reason:"")), escHtml(d.branch||"—"), badge("Review","warn")]));
+    rows.push([escHtml(m.plate)+" — "+escHtml(m.driver), "Daily Checklist", "external", escHtml((m.problems||[]).map(k=>fleetI18n.tr((DM_CHECK_ITEMS.find(x=>x[0]===k)||[k,k])[1])).join(", ")+(m.checkNote?" — "+m.checkNote:"")), escHtml(fleetI18n.tr("Today")), badge("Check","warn"), m.branch || plateBranch(m.plate)]));
+  if(!scoped) disposePipeline.requested.forEach(d=>rows.push([escHtml(`${d.model||d.category||d.veh||""}${Number(d.qty)>1?" ×"+d.qty:""}${d.company?" — "+d.company:""}`), "New / Dispose", "dispose", escHtml(fleetI18n.tr("New vehicle purchase request")+(d.reason?" — "+d.reason:"")), escHtml(fleetI18n.tr("Waiting for review")), badge("Review","warn"), d.branch]));
   document.getElementById("attentionBody").innerHTML = rows.length
-    ? rows.map(r=>`<tr><td>${r[0]}</td><td><a href="#" class="map-link" onclick="event.preventDefault();document.querySelector('.nav-btn[data-view=${r[2]}]').click()">${escHtml(fleetI18n.tr(r[1]))}</a></td><td>${r[3]}</td><td>${r[4]}</td><td>${r[5]}</td></tr>`).join("")
-    : `<tr><td colspan="5" style="color:var(--faint);text-align:center;">Nothing needs attention in ${scopeLabel}</td></tr>`;
+    ? rows.map(r=>`<tr><td>${r[0]}</td><td class="mono-cell">${escHtml(r[6] && r[6]!=="—" ? r[6] : "—")}</td><td><a href="#" class="map-link" onclick="event.preventDefault();document.querySelector('.nav-btn[data-view=${r[2]}]').click()">${escHtml(fleetI18n.tr(r[1]))}</a></td><td>${r[3]}</td><td>${r[4]}</td><td>${r[5]}</td></tr>`).join("")
+    : `<tr><td colspan="6" style="color:var(--faint);text-align:center;">Nothing needs attention in ${scopeLabel}</td></tr>`;
 }
 
 const COMPLIANCE_REQUIREMENTS = [
