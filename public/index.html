@@ -7187,6 +7187,7 @@ async function printPurchaseRequest(stageKey, idx, mode, win){
   const dmy = iso => iso ? iso.split("-").reverse().join("/") : "";
   const pick = (val, a, b) => `<span class="${val===a[0]?"":"strike"}">${a[1]}</span> / <span class="${val===b[0]?"":"strike"}">${b[1]}</span>`;
   const line = (label, value, extra="") => `<tr><td class="lb">${label}</td><td class="c">:</td><td class="val" ${extra}>${value||"&nbsp;"}</td></tr>`;
+  const oldList = i.purchaseType==="TRADE IN" ? ((i.oldPlates && i.oldPlates.length) ? i.oldPlates : String(i.oldPlate||"").split(/\s*[,\/]\s*/).filter(Boolean)) : [];
   const reasonLines = String(i.reason||"").split(/\n/).filter(Boolean);
   while(reasonLines.length < 4) reasonLines.push("");
   const blank = n => Array.from({length:n},()=>`<div class="ln">&nbsp;</div>`).join("");
@@ -7221,7 +7222,11 @@ async function printPurchaseRequest(stageKey, idx, mode, win){
     <table>
       ${line("1) Syarikat", e(i.company))}
       ${line("2) Jenis / Model", e(i.model))}
-      ${line("3) Jenis Pembelian", `${pick(i.purchaseType,["BARU","Baru"],["TRADE IN","Trade In"])} ( nyatakan no. kenderaan lama : <u>&nbsp;${e(i.oldPlate)||"&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;"}&nbsp;</u> )`)}
+      ${oldList.length
+        ? line("3) Jenis Pembelian", `${pick(i.purchaseType,["BARU","Baru"],["TRADE IN","Trade In"])} ( no. kenderaan lama — ${oldList.length} unit : )`)
+          + oldList.map((pl,k)=>{ const d = complianceData.find(x=>utilPlateKey(x.plate)===utilPlateKey(pl)); const info = d ? [d.company, d.category, locationBranch(d.location)].filter(Boolean).join(" · ") : "";
+              return `<tr><td class="lb"></td><td class="c"></td><td class="val">${k+1})&nbsp; ${e(pl)}${info?` <span style="font-weight:400;">— ${e(info)}</span>`:""}</td></tr>`; }).join("")
+        : line("3) Jenis Pembelian", `${pick(i.purchaseType,["BARU","Baru"],["TRADE IN","Trade In"])} ( nyatakan no. kenderaan lama : <u>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</u> )`)}
       <tr><td class="lb" style="vertical-align:top;">4) Sebab / Tujuan<br>&nbsp;&nbsp;&nbsp;&nbsp;Pembelian (sertakan<br>&nbsp;&nbsp;&nbsp;&nbsp;lampiran jika perlu)</td><td class="c" style="vertical-align:top;">:</td><td class="wrapln" data-min="4">${reasonLines.map(l=>`<div class="ln">${e(l)}</div>`).join("")}</td></tr>
     </table>
     <div class="sig" style="margin-top:14px;">
