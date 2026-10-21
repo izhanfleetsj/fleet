@@ -1291,6 +1291,16 @@ body:not(.is-admin) .admin-only{display:none !important;}
         </div>
 
         <div class="panel">
+          <div class="panel-head"><h3>Fleet Utilization — Selected Month</h3></div>
+          <span class="sub" style="font-size:11px;color:var(--ink-soft);display:block;margin-top:-10px;margin-bottom:10px;" id="utilTrendNote">No data for this month yet — key in / import utilization above.</span>
+          <div style="position:relative;height:300px;"><canvas id="chartUtilForecast"></canvas></div>
+          <table style="margin-top:14px;">
+            <thead><tr><th>Branch</th><th>Vehicles Counted</th><th>Avg Utilization</th><th>Target</th><th>Status</th></tr></thead>
+            <tbody id="utilTrendBody"></tbody>
+          </table>
+        </div>
+
+        <div class="panel">
           <div class="panel-head"><h3>Utilization by Branch</h3></div>
           <span class="sub" style="font-size:11px;color:var(--ink-soft);display:block;margin-top:-10px;margin-bottom:12px;">Purata utilization dikira dari kenderaan yang <strong>ditandakan (included)</strong> sahaja bagi setiap branch</span>
           <span class="sub" style="font-size:11px;color:var(--ink-soft);display:block;margin-top:-6px;margin-bottom:12px;">Working days per branch for the selected month (after company &amp; public holidays — these differ by state). Target = working days ÷ days in month.</span>
@@ -1336,16 +1346,6 @@ body:not(.is-admin) .admin-only{display:none !important;}
           </table>
           </div>
           <div style="display:flex;align-items:center;gap:10px;margin-top:8px;"><div id="utilCount" style="font-size:11px;color:var(--ink-soft);"></div><button type="button" class="btn ghost" id="utilClearAllBtn" style="display:none;padding:3px 9px;font-size:10.5px;" onclick="xlClearAll('util')">✕ Clear all filters</button></div>
-        </div>
-
-        <div class="panel">
-          <div class="panel-head"><h3>Fleet Utilization — Selected Month</h3></div>
-          <span class="sub" style="font-size:11px;color:var(--ink-soft);display:block;margin-top:-10px;margin-bottom:10px;" id="utilTrendNote">No data for this month yet — key in / import utilization above.</span>
-          <div style="position:relative;height:300px;"><canvas id="chartUtilForecast"></canvas></div>
-          <table style="margin-top:14px;">
-            <thead><tr><th>Branch</th><th>Vehicles Counted</th><th>Avg Utilization</th><th>Target</th><th>Status</th></tr></thead>
-            <tbody id="utilTrendBody"></tbody>
-          </table>
         </div>
       </section>
 
