@@ -1465,6 +1465,7 @@ body:not(.is-admin) .admin-only{display:none !important;}
             <button type="button" class="btn yellow" onclick="migDownload()">⬇ <span>Download full backup</span></button>
             <label class="btn ghost" style="cursor:pointer;margin:0;text-transform:none;letter-spacing:0;">⬆ <span>Restore from backup</span><input type="file" accept=".json,application/json" style="display:none" onchange="migRestore(this.files[0]); this.value='';"></label>
           </div>
+          <div id="migProblems" style="font-size:12px;margin-top:8px;color:var(--danger);white-space:pre-line;font-weight:600;"></div>
           <div id="migMsg" style="font-size:12px;margin-top:8px;white-space:pre-line;"></div>
         </div>
       </section>
@@ -3287,6 +3288,8 @@ async function migIndex(){
   if(!r.ok){ let m = "HTTP " + r.status; try{ m = (await r.json()).error || m; }catch(e){} throw new Error(m); }
   const d = await r.json();
   const el = document.getElementById("migHost"); if(el) el.textContent = d.host;
+  const pr = document.getElementById("migProblems");
+  if(pr) pr.textContent = (d.problems||[]).length ? "⚠ " + fleetI18n.tr("Database connection problem — fix this in Vercel / Supabase first:") + "\n• " + d.problems.join("\n• ") : "";
   return d;
 }
 const migSay = t => { const m = document.getElementById("migMsg"); if(m) m.textContent = t; };
@@ -3327,6 +3330,7 @@ async function migRestore(file){
     const pkg = JSON.parse(await file.text());
     if(!pkg || pkg.format!=="fleet-full-backup-v1" || !pkg.keys) throw new Error(fleetI18n.tr("This is not a full backup file from this app."));
     const idx = await migIndex();
+    if((idx.problems||[]).length){ migSay("✕ " + fleetI18n.tr("Restore stopped — the connected database is not ready (see the red message above). Your backup file is fine; restore again after fixing it.")); return; }
     const nk = Object.values(pkg.keys).filter(v=>v!=null).length;
     if(idx.host===pkg.host && !confirm(fleetI18n.tr("This backup came from the database that is connected now. Restore it anyway?"))) return;
     if(!confirm(fleetI18n.tr(`Restore ${nk} data lists and ${(pkg.files||[]).length} files into ${idx.host}? Data already there will be replaced.`))) return;
