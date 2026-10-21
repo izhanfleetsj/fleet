@@ -571,6 +571,7 @@
     ["Purchase Order (PO) — if the job needs one, e.g. collecting premix","Purchase Order (PO) — jika job memerlukan PO, cth. ambil premix"],
     ["Upload (PDF / Photo)","Muat naik (PDF / Gambar)"],
     ["From branch","Dari branch"],
+    ["Pending / In Progress","Pending / Dalam Proses"],
     ["Database connection problem — fix this in Vercel / Supabase first:","Masalah sambungan database — betulkan di Vercel / Supabase dahulu:"],
     ["Restore stopped — the connected database is not ready (see the red message above). Your backup file is fine; restore again after fixing it.","Restore dihentikan — database yang disambung belum sedia (lihat mesej merah di atas). Fail backup tuan selamat; restore semula selepas dibetulkan."],
     ["Move Database (new Supabase)","Pindah Database (Supabase baru)"],

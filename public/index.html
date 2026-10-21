@@ -4181,7 +4181,8 @@ function renderTickets(){
   if(cnt) cnt.textContent = fleetI18n.tr(`Showing ${filtered.length} of ${tickets.length} tickets`);
   const clr = document.getElementById("ticketClearAllBtn");
   if(clr) clr.style.display = xlAnyActive("tickets") ? "inline-block" : "none";
-  document.getElementById("ticketBody").innerHTML = filtered.map(t=>{
+  // two groups: Pending / In Progress on top, Completed below
+  const rowHtml = t=>{
     const cls = t.status==="Completed"?"good":t.status==="In Progress"?"warn":"danger";
     const diff = t.costFinal!=null ? (t.costFinal - t.costAwal) : null;
     const diffCell = diff===null ? `<span style="color:var(--faint);">—</span>`
@@ -4200,7 +4201,13 @@ function renderTickets(){
     <td>${badge(t.status,cls)}</td>
     <td><button class="btn ghost" style="padding:5px 11px;font-size:11.5px;" onclick="openAdminReply('${t.id}')">${T("Balas / Update")}</button></td>
     ${currentRole==="admin" ? `<td><button class="btn ghost" style="padding:5px 9px;font-size:10.5px;color:#C1443C;" onclick="deleteTicket('${t.id}')">✕ ${T("Padam")}</button></td>` : `<td></td>`}</tr>`;
-  }).join("");
+  };
+  const nCols = XL_TABLES.tickets.cols.length + 2;
+  const open = filtered.filter(t=>t.status!=="Completed"), done = filtered.filter(t=>t.status==="Completed");
+  const groupRow = (txt, n, color) => `<tr class="ticket-group"><td colspan="${nCols}" style="background:${color};font-weight:700;font-size:12px;letter-spacing:.03em;padding:8px 12px;">${escHtml(txt)} <span style="font-weight:400;">(${n})</span></td></tr>`;
+  document.getElementById("ticketBody").innerHTML = !filtered.length ? `<tr><td colspan="${nCols}" style="color:var(--faint);text-align:center;">—</td></tr>`
+    : groupRow("🔧 " + fleetI18n.tr("Pending / In Progress"), open.length, "rgba(253,185,19,.18)") + (open.map(rowHtml).join("") || `<tr><td colspan="${nCols}" style="color:var(--faint);text-align:center;">—</td></tr>`)
+      + (done.length ? groupRow("✓ " + fleetI18n.tr("Completed"), done.length, "var(--panel-2)") + done.map(rowHtml).join("") : "");
 }
 async function deleteTicket(id){
   if(currentRole!=="admin") return; // admin only
