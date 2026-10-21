@@ -1728,7 +1728,13 @@ const LOCATION_TO_BRANCH = {
   "KLANG":"OKLG", "S.JAYA":"OSJ", "SEREMBAN":"OSBN", "PUTRAJAYA":"OPJ",
   "HDD":"OHDD", "HQ":"HQ Shared", "OTN":"OTN", "SUBCON":"SUBCON"
 };
-function locationBranch(loc){ return LOCATION_TO_BRANCH[loc] || loc || "—"; }
+/* Location names and old spellings → branch code (KLANG → OKLG, S.JAYA / SUBANG JAYA → OSJ,
+   SEREMBAN → OSBN, PUTRAJAYA → OPJ, HDD → OHDD, HQ / HQ SHARE → HQ Shared). Unknown → "". */
+const BRANCH_ALIASES = { "KLANG":"OKLG", "S.JAYA":"OSJ", "S. JAYA":"OSJ", "S JAYA":"OSJ", "SUBANG JAYA":"OSJ", "SUBANG":"OSJ",
+  "SEREMBAN":"OSBN", "PUTRAJAYA":"OPJ", "HDD":"OHDD", "HQ":"HQ Shared", "HQ SHARE":"HQ Shared", "HQ SHARED":"HQ Shared",
+  "OKLG":"OKLG", "OSJ":"OSJ", "OSBN":"OSBN", "OPJ":"OPJ", "OHDD":"OHDD", "OTN":"OTN", "SUBCON":"SUBCON" };
+function branchCode(x){ return BRANCH_ALIASES[String(x||"").trim().toUpperCase().replace(/\s+/g," ")] || ""; }
+function locationBranch(loc){ return LOCATION_TO_BRANCH[loc] || branchCode(loc) || loc || "—"; }
 
 /* ===================== DASHBOARD (OVERVIEW) — COMPANY / BRANCH SELECTION =====================
    This selector only re-scopes the Overview tab's KPIs, chart, gauge and attention table to a
@@ -6322,7 +6328,7 @@ async function loadCostingData(){
     const saved = JSON.parse(result.value);
     if(saved && Array.isArray(saved.data) && saved.data.length){
       costingData.length = 0;
-      saved.data.forEach(r=>{ if(!r.utilHistory) r.utilHistory = {}; costingData.push(r); });
+      saved.data.forEach(r=>{ if(!r.utilHistory) r.utilHistory = {}; const bc = branchCode(r.branch); if(bc) r.branch = bc; costingData.push(r); });   // KLANG → OKLG, S.JAYA → OSJ …
     }
   }catch(e){
     console.info("Costing/utilization data: tiada simpanan shared lagi, guna data asal (kosong).", e);
@@ -6494,7 +6500,7 @@ let fleetTargetWorkingDays = null; // integer — default for branches without t
    follow different state public holidays, so each has its own target. */
 let branchWorkingDays = {};
 const UTIL_NO_BRANCH = "—";
-function utilBranchKey(br){ return br==null || br==="" || br==="null" ? UTIL_NO_BRANCH : br; }
+function utilBranchKey(br){ return br==null || br==="" || br==="null" ? UTIL_NO_BRANCH : (branchCode(br) || br); }
 function wdForBranch(br, month = fleetTargetMonth){
   const m = branchWorkingDays[month] || {};
   return m[utilBranchKey(br)] || fleetTargetWorkingDays || null;
@@ -6747,6 +6753,7 @@ async function updateUtilVehicleField(plate, field, value, el){
   const c = costingData.find(x=>x.plate===plate);
   if(!c) return;
   let v = String(value||"").trim().replace(/\s+/g," ").toUpperCase();
+  if(field==="branch") v = branchCode(v) || v;
   if(field==="plate"){
     if(!v){ A(T("Plate cannot be empty.")); renderUtilTable(); return; }
     if(v===c.plate) return;
