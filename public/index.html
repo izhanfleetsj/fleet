@@ -356,6 +356,11 @@ label{font-size:11px;font-weight:600;color:var(--ink-soft);text-transform:upperc
 /* ---- Admin login (sidebar) & admin-only pages ---- */
 body:not(.is-admin) .admin-only{display:none !important;}
 body.read-only .ro-hide{display:none !important;}
+/* group header rows (Hiring job records, Workshop tickets) — clearly separated */
+tr.grp-row td{font-weight:700;font-size:12.5px;letter-spacing:.04em;padding:10px 12px !important;text-align:left !important;}
+tr.grp-wait td{background:rgba(253,185,19,.25) !important;border-top:3px solid #E0A100 !important;box-shadow:inset 5px 0 0 #E0A100;color:var(--ink);}
+tr.grp-done td{background:rgba(46,160,67,.16) !important;border-top:3px solid #2EA043 !important;box-shadow:inset 5px 0 0 #2EA043;color:#1a7f37;}
+:root[data-theme="dark"] tr.grp-done td{background:rgba(46,160,67,.22) !important;color:#5fd47e;}
 body.read-only #migPanel, body.read-only a[href="/api/export"]{display:none !important;}
 .sidebar-admin{padding:12px 14px;border-top:1px solid #2B2D2F;}
 .admin-login-btn{width:100%;background:var(--yellow);color:#17181A;border:none;border-radius:var(--radius);
@@ -4218,10 +4223,10 @@ function renderTickets(){
   };
   const nCols = XL_TABLES.tickets.cols.length + 2;
   const open = filtered.filter(t=>t.status!=="Completed"), done = filtered.filter(t=>t.status==="Completed");
-  const groupRow = (txt, n, color) => `<tr class="ticket-group"><td colspan="${nCols}" style="background:${color};font-weight:700;font-size:12px;letter-spacing:.03em;padding:8px 12px;">${escHtml(txt)} <span style="font-weight:400;">(${n})</span></td></tr>`;
+  const groupRow = (txt, n, color) => `<tr class="ticket-group grp-row grp-${color}"><td colspan="${nCols}">${escHtml(txt)} <span style="font-weight:400;">(${n})</span></td></tr>`;
   document.getElementById("ticketBody").innerHTML = !filtered.length ? `<tr><td colspan="${nCols}" style="color:var(--faint);text-align:center;">—</td></tr>`
-    : groupRow("🔧 " + fleetI18n.tr("Pending / In Progress"), open.length, "rgba(253,185,19,.18)") + (open.map(rowHtml).join("") || `<tr><td colspan="${nCols}" style="color:var(--faint);text-align:center;">—</td></tr>`)
-      + (done.length ? groupRow("✓ " + fleetI18n.tr("Completed"), done.length, "var(--panel-2)") + done.map(rowHtml).join("") : "");
+    : groupRow("🔧 " + fleetI18n.tr("Pending / In Progress"), open.length, "wait") + (open.map(rowHtml).join("") || `<tr><td colspan="${nCols}" style="color:var(--faint);text-align:center;">—</td></tr>`)
+      + (done.length ? groupRow("✓ " + fleetI18n.tr("Completed"), done.length, "done") + done.map(rowHtml).join("") : "");
 }
 async function deleteTicket(id){
   if(currentRole!=="admin") return; // admin only
@@ -5551,10 +5556,10 @@ function renderHireTable(){
     <td>${vehCell}</td><td>${badge(h.status,cls)}${h.status==="Cancelled" && h.cancelReason ? `<div style="font-size:10.5px;color:var(--danger);margin-top:3px;">${escHtml(h.cancelReason)}</div>` : ""}</td><td style="white-space:nowrap;">${actionCell}${deleteBtn}</td></tr>`;
   };
   const waiting = rows.filter(h=>h.status==="New"), others = rows.filter(h=>h.status!=="New");
-  const groupRow = (txt, n, color) => `<tr class="hire-group"><td colspan="10" style="background:${color};font-weight:700;font-size:12px;letter-spacing:.03em;padding:8px 12px;">${escHtml(txt)} <span style="font-weight:400;">(${n})</span></td></tr>`;
+  const groupRow = (txt, n, color) => `<tr class="hire-group grp-row grp-${color}"><td colspan="10">${escHtml(txt)} <span style="font-weight:400;">(${n})</span></td></tr>`;
   document.getElementById("hireBody").innerHTML = !rows.length ? `<tr><td colspan="10" style="color:var(--faint);text-align:center;">No job records</td></tr>`
-    : (waiting.length ? groupRow("⏳ " + fleetI18n.tr("Waiting to be assigned"), waiting.length, "rgba(253,185,19,.18)") + waiting.map(rowHtml).join("") : "")
-      + groupRow("✓ " + fleetI18n.tr("Assigned / Cancelled"), others.length, "var(--panel-2)") + (others.map(rowHtml).join("") || `<tr><td colspan="10" style="color:var(--faint);text-align:center;">—</td></tr>`);
+    : (waiting.length ? groupRow("⏳ " + fleetI18n.tr("Waiting to be assigned"), waiting.length, "wait") + waiting.map(rowHtml).join("") : "")
+      + groupRow("✓ " + fleetI18n.tr("Assigned / Cancelled"), others.length, "done") + (others.map(rowHtml).join("") || `<tr><td colspan="10" style="color:var(--faint);text-align:center;">—</td></tr>`);
   const cnt = document.getElementById("hireCount");
   if(cnt) cnt.textContent = `Showing ${rows.length} of ${hiringRecords.length} jobs`;
   renderReqStatus();
