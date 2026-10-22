@@ -849,7 +849,7 @@ body:not(.is-admin) .admin-only{display:none !important;}
           </div>
           <div class="form-row">
             <div><label>Sv (nama, di tapak)</label><input id="hr_sv" placeholder="e.g. ABC"></div>
-            <div><label>No. Telefon Sv</label><input id="hr_phone" placeholder="e.g. 1234"></div>
+            <div><label>No. Telefon Sv</label><input id="hr_phone" type="tel" inputmode="tel" maxlength="16" placeholder="e.g. 012-3456789" oninput="phoneOnlyInput(this)" onpaste="phoneOnlyPaste(event,this)"></div>
           </div>
           <div class="form-row" style="grid-template-columns:1fr;">
             <div><label>Purchase Order (PO) — if the job needs one, e.g. collecting premix</label>
@@ -3360,6 +3360,16 @@ async function migRestore(file){
     if(!failed.length) setTimeout(()=>location.reload(), 3000);
   }catch(e){ migSay("✕ " + e.message); }
 }
+/* Phone-only fields: digits, +, - and spaces. Pasting a whole old template keeps just the
+   first phone number found in it (e.g. "SV: ALI 012-345 6789" → "012-345 6789"). */
+function phoneOnlyInput(el){ const v = el.value.replace(/[^0-9+\- ]/g,"").replace(/\s{2,}/g," ").slice(0,16); if(v!==el.value) el.value = v; }
+function phoneOnlyPaste(ev, el){
+  const t = (ev.clipboardData || window.clipboardData || {getData:()=>""}).getData("text") || "";
+  const m = t.match(/(?:\+?6?0)?1\d[\d\- ]{6,10}\d/) || t.match(/\+?\d[\d\- ]{7,14}\d/);
+  ev.preventDefault();
+  el.value = (m ? m[0] : t.replace(/[^0-9+\- ]/g,"")).trim().slice(0,16);
+}
+function phoneLooksValid(v){ const d = String(v).replace(/\D/g,""); return /^[0-9+\- ]+$/.test(String(v).trim()) && d.length>=9 && d.length<=13; }
 /* PDF report of the Insurance Database (rows shown: month + column filters). Opens a print
    window — choose "Save as PDF". A4 landscape, summary boxes, detail table, totals, sign-off. */
 function printInsuranceDbReport(){
@@ -5845,6 +5855,7 @@ async function logHireRequest(){
   const load = document.getElementById("hr_load").value.trim() || "—";
   const sv = document.getElementById("hr_sv").value.trim() || "—";
   const phone = document.getElementById("hr_phone").value.trim() || "—";
+  if(phone!=="—" && !phoneLooksValid(phone)){ A(fleetI18n.tr("Supervisor's phone no. must be a phone number only (e.g. 012-3456789).")); document.getElementById("hr_phone").focus(); return; }
 
   const rec = {unit,item,qty,branch,company,project,tarikh,masa,tempat,dropoff,load,sv,phone,status:"New",source:null,assignedVehicle:null,driverName:null,driverPhone:null};
   if(hrPoFile) rec.poFile = hrPoFile;
