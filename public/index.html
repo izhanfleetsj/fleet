@@ -1113,7 +1113,7 @@ body.read-only #migPanel, body.read-only a[href="/api/export"]{display:none !imp
             <tbody id="ticketBody"></tbody>
           </table>
           </div>
-          <div style="display:flex;align-items:center;gap:10px;margin-top:8px;"><div id="ticketCount" style="font-size:11px;color:var(--ink-soft);"></div><button type="button" class="btn ghost" id="ticketClearAllBtn" style="display:none;padding:3px 9px;font-size:10.5px;" onclick="xlClearAll('tickets')">✕ Clear all filters</button></div>
+          <div style="display:flex;align-items:center;gap:10px;margin-top:8px;"><div id="ticketCount" style="font-size:11px;color:var(--ink-soft);"></div><button type="button" class="btn ghost" id="ticketClearAllBtn" style="display:none;padding:3px 9px;font-size:10.5px;" onclick="xlClearAll('tickets')">✕ Clear all filters</button><span id="ticketPager" style="margin-left:auto;"></span></div>
         </div>
 
         <div class="panel">
@@ -1131,7 +1131,7 @@ body.read-only #migPanel, body.read-only a[href="/api/export"]{display:none !imp
             <thead><tr><th>Kenderaan</th><th>Bilangan Repair</th><th>Jumlah Kos (RM)</th><th>Status Terkini</th><th></th></tr></thead>
             <tbody id="repairFreqBody"></tbody>
           </table>
-          <div id="repairFreqCount" style="font-size:11px;color:var(--ink-soft);margin-top:8px;"></div>
+          <div style="display:flex;align-items:center;gap:10px;margin-top:8px;flex-wrap:wrap;"><div id="repairFreqCount" style="font-size:11px;color:var(--ink-soft);"></div><span id="repairFreqPager" style="margin-left:auto;"></span></div>
         </div>
       </section>
 
@@ -1269,7 +1269,7 @@ body.read-only #migPanel, body.read-only a[href="/api/export"]{display:none !imp
             <thead><tr id="hireHeadRow"></tr></thead>
             <tbody id="hireBody"></tbody>
           </table>
-          <div style="display:flex;align-items:center;gap:10px;margin-top:8px;"><div id="hireCount" style="font-size:11px;color:var(--ink-soft);"></div><button type="button" class="btn ghost" id="hireClearAllBtn" style="display:none;padding:3px 9px;font-size:10.5px;" onclick="xlClearAll('hiring')">✕ Clear all filters</button></div>
+          <div style="display:flex;align-items:center;gap:10px;margin-top:8px;"><div id="hireCount" style="font-size:11px;color:var(--ink-soft);"></div><button type="button" class="btn ghost" id="hireClearAllBtn" style="display:none;padding:3px 9px;font-size:10.5px;" onclick="xlClearAll('hiring')">✕ Clear all filters</button><span id="hirePager" style="margin-left:auto;"></span></div>
         </div>
       </section>
 
@@ -4222,11 +4222,14 @@ function renderTickets(){
     ${currentRole==="admin" ? `<td><button class="btn ghost" style="padding:5px 9px;font-size:10.5px;color:#C1443C;" onclick="deleteTicket('${t.id}')">✕ ${T("Padam")}</button></td>` : `<td></td>`}</tr>`;
   };
   const nCols = XL_TABLES.tickets.cols.length + 2;
-  const open = filtered.filter(t=>t.status!=="Completed"), done = filtered.filter(t=>t.status==="Completed");
+  const openAll = filtered.filter(t=>t.status!=="Completed"), doneAll = filtered.filter(t=>t.status==="Completed");
+  const shown = pagerSlice("tickets", openAll.concat(doneAll));
+  const open = shown.filter(t=>t.status!=="Completed"), done = shown.filter(t=>t.status==="Completed");
+  const tp = document.getElementById("ticketPager"); if(tp) tp.innerHTML = pagerHtml("tickets", filtered.length, "renderTickets");
   const groupRow = (txt, n, color) => `<tr class="ticket-group grp-row grp-${color}"><td colspan="${nCols}">${escHtml(txt)} <span style="font-weight:400;">(${n})</span></td></tr>`;
   document.getElementById("ticketBody").innerHTML = !filtered.length ? `<tr><td colspan="${nCols}" style="color:var(--faint);text-align:center;">—</td></tr>`
-    : groupRow("🔧 " + fleetI18n.tr("Pending / In Progress"), open.length, "wait") + (open.map(rowHtml).join("") || `<tr><td colspan="${nCols}" style="color:var(--faint);text-align:center;">—</td></tr>`)
-      + (done.length ? groupRow("✓ " + fleetI18n.tr("Completed"), done.length, "done") + done.map(rowHtml).join("") : "");
+    : (open.length || !doneAll.length ? groupRow("🔧 " + fleetI18n.tr("Pending / In Progress"), openAll.length, "wait") + (open.map(rowHtml).join("") || `<tr><td colspan="${nCols}" style="color:var(--faint);text-align:center;">—</td></tr>`) : "")
+      + (done.length ? groupRow("✓ " + fleetI18n.tr("Completed"), doneAll.length, "done") + done.map(rowHtml).join("") : "");
 }
 async function deleteTicket(id){
   if(currentRole!=="admin") return; // admin only
@@ -4491,7 +4494,8 @@ function renderRepairFrequency(){
 
   const rows = Object.entries(byVehicle).sort((a,b)=>b[1].count-a[1].count);
 
-  document.getElementById("repairFreqBody").innerHTML = rows.map(([vehicle,info],idx)=>{
+  const fp = document.getElementById("repairFreqPager"); if(fp) fp.innerHTML = pagerHtml("repairFreq", rows.length, "renderRepairFrequency");
+  document.getElementById("repairFreqBody").innerHTML = pagerSlice("repairFreq", rows).map(([vehicle,info],idx)=>{
     const sortedTickets = info.tickets.slice().sort((a,b)=>{
       const da=parseOpenedDate(a.opened), db=parseOpenedDate(b.opened);
       return (db.year-da.year)||(db.month-da.month)||(db.day-da.day);
@@ -5555,11 +5559,14 @@ function renderHireTable(){
     <td class="mono-cell">${h.tarikh} ${h.masa && h.masa!=="—"?"· "+h.masa:""}</td><td class="loc-cell">${hireLocHtml(h)}</td><td>${escHtml(svLine)}</td>
     <td>${vehCell}</td><td>${badge(h.status,cls)}${h.status==="Cancelled" && h.cancelReason ? `<div style="font-size:10.5px;color:var(--danger);margin-top:3px;">${escHtml(h.cancelReason)}</div>` : ""}</td><td style="white-space:nowrap;">${actionCell}${deleteBtn}</td></tr>`;
   };
-  const waiting = rows.filter(h=>h.status==="New"), others = rows.filter(h=>h.status!=="New");
+  const waitAll = rows.filter(h=>h.status==="New"), othersAll = rows.filter(h=>h.status!=="New");
+  const shownH = pagerSlice("hiring", waitAll.concat(othersAll));
+  const waiting = shownH.filter(h=>h.status==="New"), others = shownH.filter(h=>h.status!=="New");
+  const hp = document.getElementById("hirePager"); if(hp) hp.innerHTML = pagerHtml("hiring", rows.length, "renderHireTable");
   const groupRow = (txt, n, color) => `<tr class="hire-group grp-row grp-${color}"><td colspan="10">${escHtml(txt)} <span style="font-weight:400;">(${n})</span></td></tr>`;
   document.getElementById("hireBody").innerHTML = !rows.length ? `<tr><td colspan="10" style="color:var(--faint);text-align:center;">No job records</td></tr>`
-    : (waiting.length ? groupRow("⏳ " + fleetI18n.tr("Waiting to be assigned"), waiting.length, "wait") + waiting.map(rowHtml).join("") : "")
-      + groupRow("✓ " + fleetI18n.tr("Assigned / Cancelled"), others.length, "done") + (others.map(rowHtml).join("") || `<tr><td colspan="10" style="color:var(--faint);text-align:center;">—</td></tr>`);
+    : (waiting.length ? groupRow("⏳ " + fleetI18n.tr("Waiting to be assigned"), waitAll.length, "wait") + waiting.map(rowHtml).join("") : "")
+      + (others.length || !waitAll.length ? groupRow("✓ " + fleetI18n.tr("Assigned / Cancelled"), othersAll.length, "done") + (others.map(rowHtml).join("") || `<tr><td colspan="10" style="color:var(--faint);text-align:center;">—</td></tr>`) : "");
   const cnt = document.getElementById("hireCount");
   if(cnt) cnt.textContent = `Showing ${rows.length} of ${hiringRecords.length} jobs`;
   renderReqStatus();
@@ -5739,6 +5746,33 @@ function applyWaPaste(){
 }
 /* Phone card layout for tables: tag each data table and copy its header text onto every cell
    as data-label (see the m-cards CSS). Re-runs whenever tables are re-rendered. */
+/* ---- Page size for long tables: show 10 / 15 / 20 / 25 / 50 / 100 / All rows, with ◀ ▶.
+   The choice is remembered per table on this browser. ---- */
+const PAGER = {}, PAGER_SIZES = [10, 15, 20, 25, 50, 100, 0];
+function pagerGet(id){
+  if(!PAGER[id]){ let size = 15; try{ const v = localStorage.getItem("pager_" + id); if(v!=null && PAGER_SIZES.includes(+v)) size = +v; }catch(e){} PAGER[id] = { size, page:1 }; }
+  return PAGER[id];
+}
+function pagerSlice(id, list){
+  const st = pagerGet(id); if(!st.size) return list;
+  const pages = Math.max(1, Math.ceil(list.length / st.size));
+  if(st.page > pages) st.page = pages; if(st.page < 1) st.page = 1;
+  return list.slice((st.page-1)*st.size, st.page*st.size);
+}
+function pagerSet(id, patch, fn){
+  Object.assign(pagerGet(id), patch);
+  try{ localStorage.setItem("pager_" + id, String(pagerGet(id).size)); }catch(e){}
+  if(typeof window[fn]==="function") window[fn]();
+}
+function pagerHtml(id, total, fn){
+  const st = pagerGet(id), pages = st.size ? Math.max(1, Math.ceil(total / st.size)) : 1;
+  const from = total ? (st.size ? (st.page-1)*st.size + 1 : 1) : 0, to = st.size ? Math.min(total, st.page*st.size) : total;
+  const b = (lbl, page, dis) => `<button type="button" class="btn ghost" style="padding:2px 9px;font-size:11px;" ${dis?"disabled":""} onclick="pagerSet('${id}',{page:${page}},'${fn}')">${lbl}</button>`;
+  return `<span style="display:inline-flex;align-items:center;gap:6px;font-size:11px;color:var(--ink-soft);margin-left:auto;">${escHtml(fleetI18n.tr("Show"))}
+    <select style="width:auto;padding:2px 6px;font-size:11px;" onchange="pagerSet('${id}',{size:+this.value,page:1},'${fn}')">${PAGER_SIZES.map(n=>`<option value="${n}"${n===st.size?" selected":""}>${n || escHtml(fleetI18n.tr("All"))}</option>`).join("")}</select>
+    ${escHtml(fleetI18n.tr("per page"))} · ${from}–${to} / ${total}
+    ${pages>1 ? b("◀", st.page-1, st.page<=1) + ` ${escHtml(fleetI18n.tr("Page"))} ${st.page} / ${pages} ` + b("▶", st.page+1, st.page>=pages) : ""}</span>`;
+}
 /* ---- Management login = view only ----
    Shows every admin page and keeps all filters, sorting, printing and exports working, but
    every control that edits, adds, deletes, uploads or sends is hidden (buttons) or disabled
