@@ -355,6 +355,8 @@ label{font-size:11px;font-weight:600;color:var(--ink-soft);text-transform:upperc
 
 /* ---- Admin login (sidebar) & admin-only pages ---- */
 body:not(.is-admin) .admin-only{display:none !important;}
+body.read-only .ro-hide{display:none !important;}
+body.read-only #migPanel, body.read-only a[href="/api/export"]{display:none !important;}
 .sidebar-admin{padding:12px 14px;border-top:1px solid #2B2D2F;}
 .admin-login-btn{width:100%;background:var(--yellow);color:#17181A;border:none;border-radius:var(--radius);
   font:600 13px 'Inter',sans-serif;padding:10px 12px;cursor:pointer;text-align:center;}
@@ -3738,6 +3740,7 @@ async function submitAdminLogin(){
   }
   currentRole = "admin";
   currentBranch = null;
+  setReadOnly(r.role==="management");
   closeAdminLogin();
   // admin-only data is not loaded for visitors — load it now, before anything can be saved over it
   await loadInsComparisons(); await loadInsuranceDb(); await loadOdooPo();
@@ -3750,6 +3753,7 @@ async function submitAdminLogin(){
 async function logoutComplianceRole(){
   await window.fleetAuth.logout();
   currentRole = null;
+  setReadOnly(false);
   currentBranch = null;
   document.getElementById("addVehicleForm").style.display = "none";
   updateComplianceRoleUI();
@@ -5730,6 +5734,37 @@ function applyWaPaste(){
 }
 /* Phone card layout for tables: tag each data table and copy its header text onto every cell
    as data-label (see the m-cards CSS). Re-runs whenever tables are re-rendered. */
+/* ---- Management login = view only ----
+   Shows every admin page and keeps all filters, sorting, printing and exports working, but
+   every control that edits, adds, deletes, uploads or sends is hidden (buttons) or disabled
+   (inline inputs). Saves are blocked on the server too (403), and window.storage.set does
+   nothing here so background syncs never try to write. */
+let READ_ONLY = false;
+const RO_EDIT_RE = /\b(add[A-Z]\w*|autoSave\w*|cancelJobRequest|clearOdooPo|clearHireForm|delete\w*|doRecover|openRecover|editInsComparison|generateAssignReply|openAssignPanel|openAdminReply|submit(?!AdminLogin)\w*|ar(SetStatus|CopyPrev)|ic(AddQuote|RemoveQuote|SetSelected|SyncNow)|import\w*|mig(Restore|Download)|moveNewVehicleStage|newInsComparison|open(CostEntryFor|InsDbForm|TargetEditForm)|pr(Remove\w*|Upload\w*|OldAdd)|remove[A-Z]\w*|restoreDisposedVehicle|save\w*|setAssign\w*|setBranchWorkingDays|setDriverField|setHolidayBranch|setIncludeForFiltered|setOdoo(Item|Group)|toggleComplianceNA|toggleForm|togglePurchaseRequestForm|toggleUtilInclude|toggleWaPaste|applyWaPaste|update[A-Z]\w*|upload\w*|notify\w*WhatsApp|send\w*WhatsApp|sendHireReplyGroup|dm(Submit|Delete|Edit|AddMove|RemoveMove|AllOk|SetCheck)|logHireRequest|shareHireLocation|addTicket|splice)\s*\(/;
+function roSweep(){
+  if(!READ_ONLY) return;
+  document.querySelectorAll("[onclick],[onchange],[oninput],[onblur]").forEach(el=>{
+    if(el.dataset.ro) return;
+    const h = ["onclick","onchange","oninput","onblur"].map(a=>el.getAttribute(a)||"").join(" ");
+    if(!RO_EDIT_RE.test(h)) return;
+    el.dataset.ro = "1";
+    if(el.tagName==="INPUT" && el.type==="file"){ (el.closest("label") || el).classList.add("ro-hide"); }
+    else if(/^(INPUT|SELECT|TEXTAREA)$/.test(el.tagName)){ el.disabled = true; el.title = fleetI18n.tr("View only (management)"); }
+    else el.classList.add("ro-hide");
+  });
+}
+function setReadOnly(on){
+  READ_ONLY = !!on;
+  document.body.classList.toggle("read-only", READ_ONLY);
+  const st = document.getElementById("cr_roleStatus");
+  if(st) st.textContent = READ_ONLY ? "👁 " + fleetI18n.tr("Management — View Only") : "🔓 Admin — Full Access";
+  const lo = document.getElementById("cr_logoutBtn"); if(lo) lo.textContent = READ_ONLY ? fleetI18n.tr("Logout") : "Admin Logout";
+  if(READ_ONLY) roSweep(); else { document.querySelectorAll("[data-ro]").forEach(el=>{ delete el.dataset.ro; el.classList.remove("ro-hide"); if(/^(INPUT|SELECT|TEXTAREA)$/.test(el.tagName)) el.disabled = false; }); }
+}
+(function(){   // saves do nothing in view-only mode
+  const set = window.storage.set.bind(window.storage);
+  window.storage.set = (key, value, shared) => READ_ONLY ? Promise.resolve({ key, value }) : set(key, value, shared);
+})();
 const M_CARD_SKIP = ".cal-table, .ic-kv, .ic-grid, .no-mcard";
 function mobileCardTables(){
   document.querySelectorAll(".content table").forEach(t=>{
@@ -5756,7 +5791,7 @@ function mobileCardTables(){
   });
 }
 let mCardQueued = false;
-new MutationObserver(()=>{ if(mCardQueued) return; mCardQueued = true; requestAnimationFrame(()=>{ mCardQueued = false; mobileCardTables(); }); })
+new MutationObserver(()=>{ if(mCardQueued) return; mCardQueued = true; requestAnimationFrame(()=>{ mCardQueued = false; mobileCardTables(); roSweep(); }); })
   .observe(document.documentElement, {childList:true, subtree:true});
 
 document.addEventListener("DOMContentLoaded", ()=>{
@@ -8076,7 +8111,8 @@ fetch("/sw.js", {cache:"no-store"}).then(r=>r.text()).then(t=>{ const m = t.matc
 /* ===================== INIT ===================== */
 (async function initDashboard(){
   try{
-    if(await window.fleetAuth.session()==="admin"){ currentRole = "admin"; currentBranch = null; }
+    const ses = await window.fleetAuth.session();
+    if(ses==="admin" || ses==="management"){ currentRole = "admin"; currentBranch = null; setReadOnly(ses==="management"); }
   }catch(e){ console.info("Session check failed:", e); }
   populateLoginBranches();
   populateBranchDropdowns();

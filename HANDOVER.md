@@ -104,6 +104,16 @@ Settings → **Move Database (new Supabase)** (`#migPanel`).
   `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` in Vercel and redeploy → log in → Restore.
 - Key history (`kv_history`) is not carried over.
 
+### Management login (view only)
+Vercel env `MANAGEMENT_PASSWORD` enables a second login through the same 🔒 login button. Its session role
+is `management`.
+- **Server:** every `PUT /api/storage` returns 403, and files are GET/HEAD only.
+- **Client:** `currentRole` is set to `"admin"` so all pages render, plus `READ_ONLY=true` / `body.read-only`:
+  - `roSweep()` hides or disables every control whose inline handler matches `RO_EDIT_RE` (add / save /
+    delete / update / upload / import / assign / send…).
+  - `window.storage.set` is a no-op.
+- **When adding a new editing control,** make sure its handler name matches `RO_EDIT_RE` (or extend the regex).
+
 ## 4. Front-end conventions
 - **Translation:** UI text goes through `fleetI18n.tr("English")`. Add `["English","Melayu"]` to
   `PAIRS` in `public/i18n.js`. Strings with values go in `TEMPLATES`, for example

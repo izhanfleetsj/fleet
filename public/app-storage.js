@@ -29,7 +29,7 @@
     async session(){ const r = await call("GET", "/api/session"); return r.ok ? r.data.role : null; },
     async login(password){
       const r = await call("POST", "/api/login", { password });
-      return r.ok ? { ok: true } : { ok: false, error: (r.data && r.data.error) || "Login failed." };
+      return r.ok ? { ok: true, role: r.data && r.data.role } : { ok: false, error: (r.data && r.data.error) || "Login failed." };
     },
     async logout(){ await call("POST", "/api/logout"); },
   };
