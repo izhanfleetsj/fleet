@@ -205,6 +205,16 @@ Module details:
     - The full bundle = quotation summary + quotation pages + approval page (B + C).
     - Page numbers are "Muka x / N".
 
+- **Disposal request** (stage `disposalReq`, kind `"disposal"`, serial `DP/YYYY/NNN`):
+  - The "+ Dispose" button on the Total Vehicles Sold card opens `toggleDisposalForm()`.
+  - The form takes one or more plates, method (Jual / Trade In / Lupus / Hapus Kira), estimated value,
+    meter reading and reason. Vehicle photos (required, up to 12) and attachments (up to 4) use
+    `uploadDisposalFiles`.
+  - `printDisposalRequest(idx | -1, disposedIdx)` prints: page 1 form, photo pages (6 per page),
+    attachment pages, then a B + C approval page.
+  - `completeDisposal(idx)` removes the plates from the register into Disposed. Each Disposed row keeps
+    `dispReq`, so it can still be reprinted.
+
 ## 6. Testing locally (Playwright)
 ```bash
 # start (kill old ones first — do NOT use `pkill -f "node server"`, it kills your own shell)

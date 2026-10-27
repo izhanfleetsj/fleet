@@ -1363,11 +1363,42 @@ body.read-only #migPanel, body.read-only a[href="/api/export"]{display:none !imp
         <div class="kpi-row" style="grid-template-columns:repeat(4,1fr);">
           <div class="kpi"><div class="label">New Vehicle Requests</div><div class="value" id="ndDisposeCount">—</div><div class="foot" style="display:flex;align-items:center;justify-content:space-between;gap:6px;"><span>Requested + approved</span><button type="button" class="btn yellow" style="padding:3px 9px;font-size:10.5px;" onclick="togglePurchaseRequestForm(null,'dispose')">+ <span>Request</span></button></div></div>
           <div class="kpi"><div class="label">Total Vehicles Purchased</div><div class="value" id="ndNewCount">—</div><div class="foot" id="ndNewFoot">In progress + delivered</div></div>
-          <div class="kpi"><div class="label">Total Vehicles Sold</div><div class="value" id="ndNetChange">—</div><div class="foot" id="ndSoldFoot">Disposed units with a sold value</div></div>
+          <div class="kpi"><div class="label">Total Vehicles Sold</div><div class="value" id="ndNetChange">—</div><div class="foot" style="display:flex;align-items:center;justify-content:space-between;gap:6px;"><span id="ndSoldFoot">Disposed units with a sold value</span><button type="button" class="btn yellow" style="padding:3px 9px;font-size:10.5px;white-space:nowrap;" onclick="toggleDisposalForm()">+ <span>Dispose</span></button></div></div>
           <div class="kpi"><div class="label">Disposal Recovery (Sold)</div><div class="value mono" id="ndRecovery">—</div><div class="foot" id="ndRecoveryFoot">Total sold value of disposed units</div></div>
         </div>
 
         <div id="prSlotDispose"></div>
+
+        <div class="panel admin-only" id="disposalForm" style="display:none;background:var(--note-bg);box-shadow:none;border:1px solid #C1443C;margin:10px 0 14px;">
+          <div class="panel-head" style="margin-bottom:10px;"><h3 style="font-size:12.5px;" id="dpTitle">Vehicle Disposal Request</h3><span class="sub" style="font-size:11px;color:var(--ink-soft);">Fill in the details and upload the vehicle photos — the form is printed for approval</span></div>
+          <div class="form-row" style="grid-template-columns:1fr 2fr 1.5fr 1fr 1fr;">
+            <div><label>Date</label><input id="dp_date" type="date"></div>
+            <div><label>Applicant Name</label><input id="dp_by" class="dsp-up" placeholder="e.g. ABC"></div>
+            <div><label>Position</label><input id="dp_position" class="dsp-up" placeholder="e.g. SR EXECUTIVE"></div>
+            <div><label>Department</label><input id="dp_dept" class="dsp-up" value="FLEET"></div>
+            <div><label>Branch</label><select id="dp_branch"></select></div>
+          </div>
+          <div style="font-weight:700;font-size:11.5px;margin:6px 0 8px;text-decoration:underline;">A - Vehicle(s) to Dispose</div>
+          <div id="dp_vehList" style="display:flex;flex-direction:column;gap:6px;margin-bottom:10px;"></div>
+          <div class="form-row" style="grid-template-columns:1fr 1fr 1fr;">
+            <div><label>Disposal Method</label><select id="dp_method"></select></div>
+            <div><label>Estimated Value (RM)</label><input id="dp_value" type="number" min="0" step="0.01" placeholder="0.00"></div>
+            <div><label>Odometer / Hour Meter</label><input id="dp_meter" class="dsp-up" placeholder="e.g. 250,000 KM"></div>
+          </div>
+          <div class="form-row" style="grid-template-columns:1fr;">
+            <div><label>Reason / Justification for Disposal</label><textarea id="dp_reason" class="dsp-up" rows="3" placeholder="e.g. NOT ECONOMICAL TO REPAIR — ENGINE &amp; GEARBOX FAULT"></textarea></div>
+          </div>
+          <div style="font-weight:700;font-size:11.5px;margin:8px 0 6px;">📷 <span>Vehicle Photos (required — front, back, left, right, interior, odometer)</span></div>
+          <div id="dp_photos" style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;"></div>
+          <div style="font-weight:700;font-size:11.5px;margin:12px 0 6px;">📎 <span>Attachments (optional — damage report, repair quotation, buyer offer)</span></div>
+          <div id="dp_docs" style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;"></div>
+          <div class="form-actions" style="margin-top:12px;">
+            <span id="dp_msg" style="font-size:11px;color:var(--ink-soft);margin-right:auto;"></span>
+            <button class="btn ghost" onclick="toggleDisposalForm(null, true)">Cancel</button>
+            <button class="btn ghost" onclick="saveDisposalRequest(false)">💾 Save</button>
+            <button class="btn yellow" onclick="saveDisposalRequest(true)">🖨 Save &amp; Print</button>
+          </div>
+        </div>
 
         <div class="panel">
           <div class="panel-head"><h3>Pipeline</h3></div>
@@ -2199,6 +2230,7 @@ const disposePipeline = {
   approved:[],
   inProgress:[],
   delivered:[],
+  disposalReq:[],   // vehicle disposal requests (form + photos), before the vehicles are moved to Disposed
   disposed:[],
 };
 /* Saved New / Dispose pipeline. Vehicles removed from the Compliance Register land in
@@ -5779,7 +5811,7 @@ function pagerHtml(id, total, fn){
    (inline inputs). Saves are blocked on the server too (403), and window.storage.set does
    nothing here so background syncs never try to write. */
 let READ_ONLY = false;
-const RO_EDIT_RE = /\b(add[A-Z]\w*|autoSave\w*|cancelJobRequest|clearOdooPo|clearHireForm|delete\w*|doRecover|openRecover|editInsComparison|generateAssignReply|openAssignPanel|openAdminReply|submit(?!AdminLogin)\w*|ar(SetStatus|CopyPrev)|ic(AddQuote|RemoveQuote|SetSelected|SyncNow)|import\w*|mig(Restore|Download)|moveNewVehicleStage|newInsComparison|open(CostEntryFor|InsDbForm|TargetEditForm)|pr(Remove\w*|Upload\w*|OldAdd)|remove[A-Z]\w*|restoreDisposedVehicle|save\w*|setAssign\w*|setBranchWorkingDays|setDriverField|setHolidayBranch|setIncludeForFiltered|setOdoo(Item|Group)|toggleComplianceNA|toggleForm|togglePurchaseRequestForm|toggleUtilInclude|toggleWaPaste|applyWaPaste|update[A-Z]\w*|upload\w*|notify\w*WhatsApp|send\w*WhatsApp|sendHireReplyGroup|dm(Submit|Delete|Edit|AddMove|RemoveMove|AllOk|SetCheck)|logHireRequest|shareHireLocation|addTicket|splice)\s*\(/;
+const RO_EDIT_RE = /\b(add[A-Z]\w*|autoSave\w*|cancelJobRequest|clearOdooPo|clearHireForm|delete\w*|doRecover|openRecover|editInsComparison|generateAssignReply|openAssignPanel|openAdminReply|submit(?!AdminLogin)\w*|ar(SetStatus|CopyPrev)|ic(AddQuote|RemoveQuote|SetSelected|SyncNow)|import\w*|mig(Restore|Download)|moveNewVehicleStage|newInsComparison|open(CostEntryFor|InsDbForm|TargetEditForm)|pr(Remove\w*|Upload\w*|OldAdd)|remove[A-Z]\w*|restoreDisposedVehicle|save\w*|setAssign\w*|setBranchWorkingDays|setDriverField|setHolidayBranch|setIncludeForFiltered|setOdoo(Item|Group)|toggleComplianceNA|toggleForm|togglePurchaseRequestForm|toggleUtilInclude|toggleWaPaste|applyWaPaste|update[A-Z]\w*|upload\w*|notify\w*WhatsApp|send\w*WhatsApp|sendHireReplyGroup|dm(Submit|Delete|Edit|AddMove|RemoveMove|AllOk|SetCheck)|logHireRequest|shareHireLocation|addTicket|splice|toggleDisposalForm|completeDisposal|dpVehAdd)\s*\(/;
 function roSweep(){
   if(!READ_ONLY) return;
   document.querySelectorAll("[onclick],[onchange],[oninput],[onblur]").forEach(el=>{
@@ -7083,7 +7115,7 @@ function renderDisposeKpis(){
    every column, sold value / date / buyer edited inline per row (admin). */
 const DISPOSE_STAGES = [
   ["requested","Purchase Requested"], ["approved","Purchase Approved"],
-  ["inProgress","New — In Progress"], ["delivered","New — Delivered"], ["disposed","Disposed"],
+  ["inProgress","New — In Progress"], ["delivered","New — Delivered"], ["disposalReq","Disposal Requested"], ["disposed","Disposed"],
 ];
 const NEW_STAGES = ["inProgress","delivered"];
 const BUY_STAGES = ["requested","approved","inProgress","delivered"];
@@ -7092,11 +7124,13 @@ let disposeStage = "", disposeEditRef = "";
    once removed from the register they keep a snapshot (rec). */
 function dispRec(i){
   return (i.cid!=null && complianceData.find(d=>d.id===i.cid)) || i.rec
+    || (i.kind==="disposal" ? dpSummaryRec(i) : null)
     || (i.kind==="request" ? {company:i.company, category:i.model || ((i.category||"") + (Number(i.qty)>1 ? ` ×${i.qty}` : "")), location:i.branch||"", plate:i.serial||""} : {});
 }
 /* One set of columns for both directions: price / purchase date / supplier for new vehicles,
    sold value / date sold / buyer for disposed ones. */
 function dispMoney(i, stageKey){
+  if(i.kind==="disposal") return { isNew:false, amt: Number(i.estValue)>0 ? Number(i.estValue) : null, date:"", party: DP_METHODS[i.method] || "" };
   const isNew = BUY_STAGES.includes(stageKey);
   const amt = Number(isNew ? i.price : i.soldValue);
   return { isNew, amt: amt>0 ? amt : null, date: (isNew ? i.purchaseDate : i.soldDate) || "", party: String((isNew ? i.supplier : i.buyer) || "").toUpperCase() };
@@ -7133,12 +7167,12 @@ function renderDisposeTable(){
   const btn = "padding:3px 8px;font-size:10.5px;";
   document.getElementById("disposeBody").innerHTML = rows.map(r=>{
     const i = r.i, ref = r.stageKey+":"+r.idx, rec = dispRec(i), m = dispMoney(i, r.stageKey);
-    const editing = disposeEditRef===ref && currentRole==="admin";
+    const editing = disposeEditRef===ref && currentRole==="admin" && i.kind!=="disposal";
     const auto = `onchange="autoSaveDisposed('${r.stageKey}',${r.idx})" onkeydown="if(event.key==='Enter'){this.blur();}"`;
     const reasonText = dispReasonText(i);
     const stageCell = editing && m.isNew
       ? `<select id="dspStage" style="font-size:11px;padding:3px 4px;min-width:120px;" onchange="moveNewVehicleStage('${r.stageKey}',${r.idx},this.value)">${BUY_STAGES.map(k=>`<option value="${k}"${k===r.stageKey?" selected":""}>${escHtml(fleetI18n.tr(DISPOSE_STAGES.find(x=>x[0]===k)[1]))}</option>`).join("")}</select>`
-      : `<span class="badge ${r.stageKey==="disposed"?"danger":NEW_STAGES.includes(r.stageKey)?"good":"warn"}">${escHtml(fleetI18n.tr(r.stage))}</span>`;
+      : `<span class="badge ${r.stageKey==="disposed"?"danger":NEW_STAGES.includes(r.stageKey)?"good":r.stageKey==="disposalReq"?"neutral":"warn"}">${escHtml(fleetI18n.tr(r.stage))}</span>`;
     const reasonCell = editing
       ? `<td><input type="text" id="dspReason" class="dsp-up" value="${escHtml(reasonText)}" ${auto} style="width:100%;min-width:140px;"></td>`
       : `<td>${escHtml(reasonText)||"—"}</td>`;
@@ -7148,11 +7182,15 @@ function renderDisposeTable(){
          <td><input type="text" id="dspBuyer" class="dsp-up" value="${escHtml(m.party)}" placeholder="${escHtml(fleetI18n.tr(m.isNew?"Supplier (optional)":"Buyer (optional)"))}" ${auto} style="width:100%;min-width:120px;"></td>`
       : `<td class="mono-cell" style="${m.amt==null?"color:var(--faint);":m.isNew?"font-weight:600;":"color:var(--good);font-weight:600;"}">${m.amt!=null?m.amt.toLocaleString("en-MY"):"—"}</td>
          <td class="mono-cell">${escHtml(isoToDmy(m.date))||"—"}</td><td>${escHtml(m.party)||"—"}</td>`;
-    const actions = editing
+    const actions = i.kind==="disposal"
+      ? `<button type="button" class="btn ghost" style="${btn}" title="${escHtml(fleetI18n.tr("Edit disposal request / photos"))}" onclick="toggleDisposalForm(${r.idx})">✎ <span>${escHtml(fleetI18n.tr("Edit"))}</span> · 📷${(i.photos||[]).length}</button> <button type="button" class="btn ghost" style="${btn}" title="${escHtml(fleetI18n.tr("Print disposal request (form, photos, attachments, approval page)"))}" onclick="printDisposalRequest(${r.idx})">🖨</button> <button type="button" class="btn ghost" style="${btn}" title="${escHtml(fleetI18n.tr("Approved — remove the vehicle(s) from the Compliance Register and move to Disposed"))}" onclick="completeDisposal(${r.idx})">➜ ${escHtml(fleetI18n.tr("Disposed"))}</button> <button type="button" class="btn ghost" style="${btn}color:#C1443C;" title="${escHtml(fleetI18n.tr("Delete request"))}" onclick="deleteDisposalRequest(${r.idx})">✕</button>`
+      : i.dispReq && r.stageKey==="disposed" && !editing
+      ? `<button type="button" class="btn ghost" style="${btn}" onclick="disposeEditRef='${ref}';renderDisposeTable()">✎ <span>${escHtml(fleetI18n.tr("Edit"))}</span></button> <button type="button" class="btn ghost" style="${btn}" title="${escHtml(fleetI18n.tr("Print disposal request"))} ${escHtml(i.dispReq.serial||"")}" onclick="printDisposalRequest(-1, ${r.idx})">🖨</button>${i.rec ? ` <button type="button" class="btn ghost" style="${btn}" title="${escHtml(fleetI18n.tr("Restore to register"))}" onclick="restoreDisposedVehicle(${r.idx})">↩</button>` : ""} <button type="button" class="btn ghost" style="${btn}color:#C1443C;" title="${escHtml(fleetI18n.tr("Delete this record"))}" onclick="deleteDisposeItem('${r.stageKey}',${r.idx})">✕</button>`
+      : editing
       ? `<span id="dspSaved" style="font-size:10.5px;color:var(--good);margin-right:6px;"></span><button type="button" class="btn" style="${btn}" onclick="disposeEditRef='';renderDisposeTable()">✓ <span>${escHtml(fleetI18n.tr("Done"))}</span></button>`
       : `<button type="button" class="btn ghost" style="${btn}" title="${escHtml(fleetI18n.tr(i.kind==="request"?"Edit request / upload quotations":m.isNew?"Enter purchase details":"Enter sold value"))}" onclick="${i.kind==="request" ? `togglePurchaseRequestForm('${ref}')` : `disposeEditRef='${ref}';renderDisposeTable()`}">✎ <span>${escHtml(fleetI18n.tr("Edit"))}</span>${i.kind==="request" && (i.quotes||[]).length ? ` · 📎${i.quotes.length}` : ""}</button>${i.rec && r.stageKey==="disposed" ? ` <button type="button" class="btn ghost" style="${btn}" title="${escHtml(fleetI18n.tr("Restore to register"))}" onclick="restoreDisposedVehicle(${r.idx})">↩</button>` : ""}${i.kind!=="request" ? ` <button type="button" class="btn ghost" style="${btn}color:#C1443C;" title="${escHtml(fleetI18n.tr("Delete this record"))}" onclick="deleteDisposeItem('${r.stageKey}',${r.idx})">✕</button>` : ""}${i.kind==="request" ? ` <button type="button" class="btn ghost" style="${btn}" title="${escHtml(fleetI18n.tr("Step 1 — print request form (page 1) for the head of department to sign"))}" onclick="printPurchaseRequest('${r.stageKey}',${r.idx},'form')">🖨 1</button> <button type="button" class="btn ghost" style="${btn}" ${(i.quotes||[]).length?"":"disabled"} title="${escHtml(fleetI18n.tr("Step 3 — print quotation summary, quotations and the management approval page"))}" onclick="printPurchaseRequest('${r.stageKey}',${r.idx},'full')">🖨 2</button> <button type="button" class="btn ghost" style="${btn}color:#C1443C;" title="${escHtml(fleetI18n.tr("Delete request"))}" onclick="deletePurchaseRequest('${r.stageKey}',${r.idx})">✕</button>` : ""}`;
     return `<tr><td>${stageCell}</td>
-      <td style="font-weight:600;">${escHtml(rec.plate || i.plate || i.veh || "")||"—"}${i.requestedBy?`<div style="font-size:10px;font-weight:400;color:var(--ink-soft);">${escHtml(fleetI18n.tr("By"))} ${escHtml(i.requestedBy)}</div>`:""}</td><td>${escHtml(rec.company||"—")}</td><td>${escHtml(rec.category||"—")}</td>
+      <td style="font-weight:600;">${escHtml(rec.plate || i.plate || i.veh || "")||"—"}${i.kind==="disposal" ? `<div style="font-size:10.5px;font-weight:600;color:var(--danger);">${escHtml(dpPlates(i).join(", "))}</div>` : ""}${i.dispReq && i.dispReq.serial ? `<div style="font-size:10px;font-weight:400;color:var(--ink-soft);">${escHtml(i.dispReq.serial)}</div>` : ""}${i.requestedBy?`<div style="font-size:10px;font-weight:400;color:var(--ink-soft);">${escHtml(fleetI18n.tr("By"))} ${escHtml(i.requestedBy)}</div>`:""}</td><td>${escHtml(rec.company||"—")}</td><td>${escHtml(rec.category||"—")}</td>
       <td class="mono-cell">${escHtml(rec.location ? locationBranch(rec.location) : "—")}</td><td class="mono-cell">${escHtml(i.addedAt || i.removedAt || "—")}</td>
       ${reasonCell}${moneyCells}
       <td class="admin-only"><div class="dsp-actions">${actions}</div></td></tr>`;
@@ -7268,7 +7306,7 @@ async function prShrinkImage(file){
   const blob = await new Promise(ok=>c.toBlob(ok, "image/jpeg", 0.85));
   return new File([blob], file.name.replace(/\.\w+$/, "") + ".jpg", {type:"image/jpeg"});
 }
-async function prUploadFile(file, kind){
+async function prUploadFile(file, kind, msgId){
   if(!file) return null;
   const ok = /^(application\/pdf|image\/(jpeg|png|webp))$/.test(file.type) || /^image\//.test(file.type);
   if(!ok){ alert(fleetI18n.tr("Only PDF or image files (JPG / PNG) are accepted.")); return null; }
@@ -7278,7 +7316,7 @@ async function prUploadFile(file, kind){
   if(file.size > 4*1024*1024){ alert(fleetI18n.tr("File is too large (max 4 MB). Please reduce the file size and try again.")); return null; }
   const ext = {"application/pdf":".pdf","image/png":".png","image/webp":".webp","image/jpeg":".jpg"}[type];
   const id = `nv-${kind}-${Date.now().toString(36)}${Math.random().toString(36).slice(2,6)}${ext}`;
-  const msg = document.getElementById("pr_uploadMsg");
+  const msg = document.getElementById(msgId || "pr_uploadMsg");
   msg.textContent = fleetI18n.tr("Uploading…");
   try{
     const r = await fetch("/api/files/" + encodeURIComponent(id), { method:"PUT", credentials:"same-origin",
@@ -7512,6 +7550,214 @@ async function purchaseFileToImages(f){
     out.push(c.toDataURL("image/jpeg", 0.88));
   }
   return out;
+}
+/* ---- Vehicle disposal request (same idea as the purchase request form) ----
+   Stage "disposalReq". Item: {kind:"disposal", serial:"DP/YYYY/NNN", date, requestedBy, position, dept,
+   branch, plates:[…], method, estValue, meter, reason, photos:[file], docs:[file]}.
+   "➜ Disposed" removes the vehicles from the Compliance Register into Disposed; each Disposed row keeps
+   a copy of the request (dispReq) so the form can still be printed. */
+const DP_METHODS = { SELL:"Jual", TRADEIN:"Trade In", SCRAP:"Lupus / Scrap", WRITEOFF:"Hapus Kira" };
+let dpEditIdx = null, dpPhotos = [], dpDocs = [], dpRemovedFiles = [];
+function dpPlates(i){ return (i.plates||[]).filter(Boolean); }
+function dpSummaryRec(i){
+  const d = complianceData.find(x=>utilPlateKey(x.plate)===utilPlateKey(dpPlates(i)[0]||"")) || {};
+  return { company: d.company || "", category: d.category || "", location: i.branch || d.location || "", plate: i.serial || "" };
+}
+function dpVehInfo(pl){
+  const d = complianceData.find(x=>utilPlateKey(x.plate)===utilPlateKey(pl));
+  return d ? [d.company, d.category, locationBranch(d.location), d.roadTax ? "Road tax " + d.roadTax : ""].filter(Boolean).join(" · ") : (pl ? fleetI18n.tr("Not in the Compliance Register") : "");
+}
+function dpVehSet(list){
+  const w = document.getElementById("dp_vehList"); if(!w) return;
+  const dl = document.getElementById("prPlateList");
+  if(dl && !dl.options.length) dl.innerHTML = complianceData.filter(d=>d.plate).map(d=>`<option value="${escHtml(d.plate)}">${escHtml([d.company, d.category, locationBranch(d.location)].filter(Boolean).join(" · "))}</option>`).join("");
+  const vals = list && list.length ? list : [""];
+  w.innerHTML = vals.map(v=>`<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;"><input class="dp-veh dsp-up" list="prPlateList" value="${escHtml(v)}" placeholder="${escHtml(fleetI18n.tr("Plate no."))}" style="width:150px;" oninput="this.nextElementSibling.textContent=dpVehInfo(this.value.trim())"><span style="font-size:11.5px;color:var(--ink-soft);flex:1;">${escHtml(dpVehInfo(v))}</span><button type="button" class="btn ghost" style="padding:2px 7px;font-size:11px;color:var(--danger);" onclick="this.parentNode.remove(); if(!document.querySelector('#dp_vehList .dp-veh')) dpVehSet([]);">✕</button></div>`).join("")
+    + `<div><button type="button" class="btn ghost" style="padding:4px 10px;font-size:11px;" onclick="dpVehAdd()">+ ${escHtml(fleetI18n.tr("Add vehicle"))}</button></div>`;
+}
+function dpVehGet(){ return [...document.querySelectorAll("#dp_vehList .dp-veh")].map(i=>i.value.trim().toUpperCase()).filter(Boolean).filter((v,k,a)=>a.indexOf(v)===k); }
+function dpVehAdd(){ const cur = [...document.querySelectorAll("#dp_vehList .dp-veh")].map(i=>i.value); dpVehSet([...cur, ""]); const all = document.querySelectorAll("#dp_vehList .dp-veh"); all[all.length-1].focus(); }
+function toggleDisposalForm(idx, close){
+  const f = document.getElementById("disposalForm");
+  if(close){ f.style.display = "none"; dpEditIdx = null; return; }
+  const item = idx!=null ? disposePipeline.disposalReq[idx] : null;
+  dpEditIdx = item ? idx : null;
+  const set = (id,v) => { document.getElementById(id).value = v==null ? "" : v; };
+  set("dp_date", item ? item.date : APP_TODAY_ISO); set("dp_by", item && item.requestedBy); set("dp_position", item && item.position);
+  set("dp_dept", item ? item.dept : "FLEET"); set("dp_value", item && Number(item.estValue)>0 ? item.estValue : ""); set("dp_meter", item && item.meter); set("dp_reason", item && item.reason);
+  const bs = document.getElementById("dp_branch");
+  bs.innerHTML = `<option value="">${escHtml(fleetI18n.tr("— Select branch —"))}</option>` + BRANCH_CODES.map(b=>`<option value="${b}">${b}</option>`).join("");
+  bs.value = item && item.branch || "";
+  document.getElementById("dp_method").innerHTML = Object.entries(DP_METHODS).map(([k,l])=>`<option value="${k}">${escHtml(fleetI18n.tr(l))}</option>`).join("");
+  set("dp_method", item && item.method || "SELL");
+  dpVehSet(item ? dpPlates(item) : []);
+  dpPhotos = item ? JSON.parse(JSON.stringify(item.photos||[])) : [];
+  dpDocs = item ? JSON.parse(JSON.stringify(item.docs||[])) : [];
+  dpRemovedFiles = [];
+  document.getElementById("dpTitle").textContent = item ? `${fleetI18n.tr("Edit Disposal Request")} — ${item.serial}` : fleetI18n.tr("Vehicle Disposal Request");
+  document.getElementById("dp_msg").textContent = "";
+  renderDisposalFiles();
+  f.style.display = "block";
+  f.scrollIntoView({behavior:"smooth", block:"start"});
+}
+function renderDisposalFiles(){
+  document.getElementById("dp_photos").innerHTML = dpPhotos.map((f,n)=>`<span class="pr-photo"><img src="/api/files/${encodeURIComponent(f.id)}" alt=""><button type="button" onclick="removeDisposalFile('p',${n})" title="${escHtml(fleetI18n.tr("Remove photo"))}">✕</button></span>`).join("")
+    + (dpPhotos.length < 12 ? `<label class="btn ghost" style="padding:4px 10px;font-size:11px;cursor:pointer;">📷 ${escHtml(fleetI18n.tr("Add photo"))}<input type="file" accept="image/*" multiple style="display:none" onchange="uploadDisposalFiles('p', this.files); this.value='';"></label>` : "")
+    + `<span style="font-size:11px;color:var(--ink-soft);">${dpPhotos.length} / 12</span>`;
+  document.getElementById("dp_docs").innerHTML = dpDocs.map((f,n)=>`<span style="display:inline-flex;align-items:center;gap:4px;">${prFileLink(f)} <button type="button" class="btn ghost" style="padding:1px 6px;font-size:10px;color:var(--danger);" onclick="removeDisposalFile('d',${n})">✕</button></span>`).join("")
+    + (dpDocs.length < 4 ? `<label class="btn ghost" style="padding:4px 10px;font-size:11px;cursor:pointer;">📎 ${escHtml(fleetI18n.tr("Upload attachment (PDF / photo)"))}<input type="file" accept="application/pdf,image/*" multiple style="display:none" onchange="uploadDisposalFiles('d', this.files); this.value='';"></label>` : "");
+}
+async function uploadDisposalFiles(kind, files){
+  const list = kind==="p" ? dpPhotos : dpDocs, max = kind==="p" ? 12 : 4;
+  for(const file of [...files].slice(0, max - list.length)){
+    if(kind==="p" && !/^image\//.test(file.type)){ alert(fleetI18n.tr("Only PDF or image files (JPG / PNG) are accepted.")); continue; }
+    const f = await prUploadFile(file, kind==="p" ? "dp" : "dd", "dp_msg"); if(f) list.push(f);
+  }
+  renderDisposalFiles();
+}
+function removeDisposalFile(kind, n){ const list = kind==="p" ? dpPhotos : dpDocs; dpRemovedFiles.push(list[n].id); list.splice(n,1); renderDisposalFiles(); }
+function nextDisposalSerial(year){
+  const re = new RegExp(`^DP/${year}/(\\d+)$`);
+  const all = [...disposePipeline.disposalReq, ...disposePipeline.disposed.map(d=>d.dispReq).filter(Boolean)];
+  const max = all.reduce((m,i)=>{ const x = re.exec(i.serial||""); return x ? Math.max(m, +x[1]) : m; }, 0);
+  return `DP/${year}/${String(max+1).padStart(3,"0")}`;
+}
+async function saveDisposalRequest(print){
+  if(currentRole!=="admin") return;
+  const v = id => document.getElementById(id).value.trim();
+  const plates = dpVehGet();
+  if(!v("dp_by")){ alert(fleetI18n.tr("Please fill in the applicant name.")); return; }
+  if(!plates.length){ alert(fleetI18n.tr("Please add at least one vehicle plate.")); return; }
+  if(!dpPhotos.length){ alert(fleetI18n.tr("Please upload at least one vehicle photo.")); return; }
+  const w = print ? window.open("", "_blank") : null;   // opened inside the click so it is not blocked
+  const date = v("dp_date") || APP_TODAY_ISO;
+  const data = { kind:"disposal", date, requestedBy:v("dp_by").toUpperCase(), position:v("dp_position").toUpperCase(), dept:v("dp_dept").toUpperCase(),
+    branch:v("dp_branch"), plates, method:v("dp_method"), estValue: v("dp_value")==="" ? null : Number(v("dp_value")), meter:v("dp_meter").toUpperCase(),
+    reason:v("dp_reason").toUpperCase(), photos:dpPhotos, docs:dpDocs, addedAt: date.split("-").reverse().join("/") };
+  let idx;
+  if(dpEditIdx!=null && disposePipeline.disposalReq[dpEditIdx]){ Object.assign(disposePipeline.disposalReq[dpEditIdx], data); idx = dpEditIdx; }
+  else { data.serial = nextDisposalSerial(date.slice(0,4)); data.uid = Date.now().toString(36); disposePipeline.disposalReq.unshift(data); idx = 0; }
+  const removed = dpRemovedFiles.slice();
+  await persistDisposePipeline();
+  removed.forEach(id=>fetch("/api/files/" + encodeURIComponent(id), { method:"DELETE", credentials:"same-origin", headers:{ "X-Requested-With":"fleet-app" } }).catch(()=>{}));
+  toggleDisposalForm(null, true);
+  renderDispose();
+  if(w) printDisposalRequest(idx, null, w);
+}
+async function deleteDisposalRequest(idx){
+  if(currentRole!=="admin") return;
+  const item = disposePipeline.disposalReq[idx]; if(!item) return;
+  if(!confirm(fleetI18n.tr(`Delete disposal request ${item.serial}? Its photos and attachments are deleted too.`))) return;
+  disposePipeline.disposalReq.splice(idx,1);
+  [...(item.photos||[]), ...(item.docs||[])].forEach(f=>fetch("/api/files/" + encodeURIComponent(f.id), { method:"DELETE", credentials:"same-origin", headers:{ "X-Requested-With":"fleet-app" } }).catch(()=>{}));
+  await persistDisposePipeline();
+  renderDispose();
+}
+/* Approved: every vehicle on the request leaves the Compliance Register and becomes a Disposed row. */
+async function completeDisposal(idx){
+  if(currentRole!=="admin") return;
+  const item = disposePipeline.disposalReq[idx]; if(!item) return;
+  const plates = dpPlates(item);
+  if(!confirm(fleetI18n.tr(`Disposal ${item.serial} approved?\n\nMove ${plates.join(", ")} out of the Compliance Register into Disposed?`))) return;
+  const today = APP_TODAY_ISO.split("-").reverse().join("/");
+  const snap = JSON.parse(JSON.stringify(item));
+  plates.forEach(pl=>{
+    const k = complianceData.findIndex(d=>utilPlateKey(d.plate)===utilPlateKey(pl));
+    const rec = k>-1 ? complianceData.splice(k,1)[0] : null;
+    disposePipeline.disposed.unshift({ veh: rec ? `${rec.company} — ${rec.plate}` : pl, plate: rec ? rec.plate : pl, removedAt: today,
+      reason: item.reason || "", rec: rec || undefined, dispReq: snap, buyer: "", soldValue: null, soldDate: "" });
+    if(rec) NEW_STAGES.forEach(s=>disposePipeline[s].forEach(n=>{ if(n.cid===rec.id){ n.rec = {...rec}; n.cid = null; } }));
+  });
+  disposePipeline.disposalReq.splice(idx,1);
+  await persistDisposePipeline();
+  await persistComplianceRegister();
+  recomputeComplianceStatuses();
+  populateComplianceFilters(); renderComplianceTable(); renderInsurance(); renderDispose();
+}
+/* Printed disposal request: page 1 form (A + signatures), photo pages, attachment pages, last page B + C. */
+async function printDisposalRequest(idx, disposedIdx, win){
+  const i = idx!=null && idx>=0 ? disposePipeline.disposalReq[idx] : (disposePipeline.disposed[disposedIdx]||{}).dispReq;
+  const w = win || window.open("", "_blank");
+  if(!w){ alert(fleetI18n.tr("Please allow pop-ups to print the report.")); return; }
+  if(!i){ w.close(); return; }
+  w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${escHtml(i.serial)}</title></head><body style="font-family:Arial;padding:30px;">Menyediakan borang pelupusan untuk dicetak…</body></html>`);
+  const e = x => escHtml(x==null ? "" : String(x));
+  const dmy = iso => iso ? iso.split("-").reverse().join("/") : "";
+  const line = (label, value, extra="") => `<tr><td class="lb">${label}</td><td class="c">:</td><td class="val" ${extra}>${value||"&nbsp;"}</td></tr>`;
+  const blank = n => Array.from({length:n},()=>`<div class="ln">&nbsp;</div>`).join("");
+  const money = n => Number(n)>0 ? "RM " + Number(n).toLocaleString("en-MY",{minimumFractionDigits:2, maximumFractionDigits:2}) : "";
+  const reasonLines = String(i.reason||"").split(/\n/).filter(Boolean); while(reasonLines.length < 4) reasonLines.push("");
+  const methods = Object.entries(DP_METHODS).map(([k,l])=>`<span class="${i.method===k?"":"strike"}">${l}</span>`).join(" / ");
+  const vehRows = dpPlates(i).map((pl,k)=>{ const d = complianceData.find(x=>utilPlateKey(x.plate)===utilPlateKey(pl))
+      || ((disposePipeline.disposed.find(x=>x.rec && utilPlateKey(x.rec.plate)===utilPlateKey(pl))||{}).rec) || {};
+    return `<tr><td class="c2">${k+1}</td><td><b>${e(pl)}</b></td><td>${e(d.company)}</td><td>${e(d.category)}</td><td>${e(d.location ? locationBranch(d.location) : "")}</td><td>${e(d.roadTax)}</td><td>${e(d.insurance)}</td></tr>`; }).join("");
+  const photos = [], docs = [];
+  for(const f of (i.photos||[])){ try{ photos.push(...await purchaseFileToImages(f)); }catch(err){ console.warn(err); } }
+  for(const f of (i.docs||[])){ try{ docs.push(...(await purchaseFileToImages(f)).map(src=>({src, name:f.name}))); }catch(err){ console.warn(err); docs.push({src:null, name:f.name}); } }
+  const photoPages = []; for(let k=0;k<photos.length;k+=6) photoPages.push(photos.slice(k,k+6));
+  const css = `*{box-sizing:border-box;} body{font-family:Arial,Helvetica,sans-serif;font-size:12.5px;color:#000;margin:0;}
+  .page{width:210mm;height:296mm;margin:0 auto;padding:14mm 14mm 16mm;page-break-after:always;position:relative;overflow:hidden;} .page:last-child{page-break-after:auto;}
+  .pgno{position:absolute;bottom:7mm;left:0;right:0;text-align:center;font-size:10.5px;} .runhead{position:absolute;top:6mm;left:14mm;font-size:9.5px;color:#333;}
+  @media screen{ .page{border-bottom:1px dashed #bbb;} }
+  h1{font-size:14px;text-align:center;text-decoration:underline;margin:0 0 2px;line-height:1.5;}
+  .siri{text-align:right;margin:4px 0 10px;} .siri b{display:inline-block;min-width:38mm;border-bottom:1px solid #000;text-align:left;padding-left:4px;}
+  table{width:100%;border-collapse:collapse;} td{vertical-align:bottom;padding:5px 2px;}
+  td.lb{width:52mm;white-space:nowrap;} td.c{width:4mm;} td.val{border-bottom:1px solid #000;font-weight:600;}
+  .sec{font-weight:700;text-decoration:underline;margin:14px 0 4px;} .strike{text-decoration:line-through;font-weight:400;color:#555;}
+  .ln{border-bottom:1px solid #000;min-height:20px;font-weight:600;padding-top:3px;}
+  table.v{border:1px solid #000;margin:4px 0 6px;} table.v th,table.v td{border:1px solid #000;padding:5px 5px;font-size:11px;vertical-align:top;} table.v th{background:#e6e6e6;text-align:left;} td.c2{width:8mm;text-align:center;}
+  .sig{display:flex;justify-content:space-between;gap:8mm;margin-top:22px;} .sig>div{flex:1;font-size:11.5px;}
+  .sig .s{border-bottom:1px dotted #000;height:46px;margin-bottom:4px;} .sig .r{display:flex;gap:4px;margin-top:5px;} .sig .r span:last-child{flex:1;border-bottom:1px solid #000;font-weight:600;min-height:15px;}
+  .note{font-size:10.5px;margin-top:10px;}
+  .photos{display:grid;grid-template-columns:1fr 1fr;gap:4mm;margin-top:8px;} .photos img{width:100%;height:78mm;object-fit:cover;border:1px solid #999;}
+  .qhead{font-weight:700;border-bottom:2px solid #000;padding-bottom:4px;margin-bottom:6px;} .qimg{display:block;max-width:100%;max-height:250mm;margin:0 auto;object-fit:contain;}
+  .two{display:grid;grid-template-columns:1.55fr 1fr;column-gap:6mm;} .two>table:last-child td.lb{width:32mm;}
+  @page{size:A4 portrait;margin:0;}`;
+  const page1 = `<div class="page">
+    <h1>BORANG PERMOHONAN PELUPUSAN KENDERAAN</h1>
+    <div class="siri">No. Siri : <b>${e(i.serial)}</b></div>
+    <div class="two"><table>${line("1) Tarikh", e(dmy(i.date)))}${line("2) Nama Pemohon", e(i.requestedBy))}${line("4) Jawatan", e(i.position))}</table>
+      <table><tr><td style="height:24px"></td></tr>${line("3) Jabatan", e(i.dept), "")}${line("5) Cawangan", e(i.branch||""), "")}</table></div>
+    <div class="sec">A - Butiran Kenderaan Untuk Dilupuskan (${dpPlates(i).length} unit)</div>
+    <table class="v"><tr><th style="width:8mm;">Bil</th><th>No. Kenderaan</th><th>Syarikat</th><th>Jenis</th><th>Cawangan</th><th>Cukai Jalan</th><th>Insurans</th></tr>${vehRows}</table>
+    <table>
+      ${line("1) Kaedah Pelupusan", methods)}
+      ${line("2) Anggaran Nilai (RM)", e(money(i.estValue)))}
+      ${line("3) Odometer / Meter Jam", e(i.meter))}
+      <tr><td class="lb" style="vertical-align:top;">4) Sebab / Justifikasi<br>&nbsp;&nbsp;&nbsp;&nbsp;Pelupusan (sertakan<br>&nbsp;&nbsp;&nbsp;&nbsp;lampiran jika perlu)</td><td class="c" style="vertical-align:top;">:</td><td class="wrapln" data-min="4">${reasonLines.map(l=>`<div class="ln">${e(l)}</div>`).join("")}</td></tr>
+      ${line("5) Lampiran", `${(i.photos||[]).length} gambar kenderaan${(i.docs||[]).length ? ` · ${(i.docs||[]).length} dokumen sokongan` : ""}`)}
+    </table>
+    <div class="sig">
+      <div><div class="s"></div>Tandatangan Pemohon<div class="r"><span>Nama :</span><span>${e(i.requestedBy)}</span></div><div class="r"><span>Tarikh :</span><span>${e(dmy(i.date))}</span></div></div>
+      <div><div class="s"></div>Tandatangan Ketua Jabatan Pemohon<div class="r"><span>Nama :</span><span></span></div><div class="r"><span>Tarikh :</span><span></span></div></div>
+    </div>
+    <div class="note">**Potong yang tidak berkenaan</div>
+  </div>`;
+  const photoHtml = photoPages.map((ps,k)=>`<div class="page"><div class="qhead">GAMBAR KENDERAAN${photoPages.length>1?` (${k+1}/${photoPages.length})`:""} — ${e(dpPlates(i).join(", "))}</div><div class="photos">${ps.map(src=>`<img src="${src}">`).join("")}</div></div>`).join("");
+  const docHtml = docs.map((d,k)=>`<div class="page"><div class="qhead">LAMPIRAN ${k+1} — ${e(d.name||"")}</div>${d.src ? `<img class="qimg" src="${d.src}">` : `<p style="margin-top:30mm;text-align:center;color:#555;">Fail lampiran tidak dapat dibuka.</p>`}</div>`).join("");
+  const last = `<div class="page">
+    <h1>BORANG PERMOHONAN PELUPUSAN KENDERAAN — ULASAN &amp; KELULUSAN</h1>
+    <div class="siri">No. Siri : <b>${e(i.serial)}</b></div>
+    <table>${line("No. Kenderaan", e(dpPlates(i).join(", ")))}${line("Kaedah Pelupusan", e(DP_METHODS[i.method]||""))}${line("Nama Pemohon", e(i.requestedBy))}</table>
+    <div class="sec">B - Ulasan / Komen Jabatan Fleet</div>
+    ${blank(5)}
+    <div class="sig" style="margin-top:8px;justify-content:flex-end;">
+      <div style="flex:0 0 62mm;"><div class="s"></div>T/Tangan Ketua Jab. Pengurusan Fleet<div class="r"><span>Nama :</span><span></span></div><div class="r"><span>Tarikh :</span><span></span></div></div>
+    </div>
+    <div class="sec">C - Bagi Pihak Pengurusan</div>
+    <div style="margin:4px 0 2px;">Permohonan Diluluskan / Tidak Diluluskan (nyatakan sebab jika tidak lulus)**</div>
+    ${blank(4)}
+    <div style="margin:14px 0 2px;">Harga jualan / nilai pelupusan yang diluluskan (RM) : <span style="display:inline-block;width:45mm;border-bottom:1px solid #000;">&nbsp;</span></div>
+    <div class="sig" style="margin-top:8px;">
+      <div><div class="s"></div>Pengarah Urusan Kanan / Pengarah Urusan<div class="r"><span>Tarikh :</span><span></span></div></div>
+      <div><div class="s"></div>Ketua Pegawai Eksekutif<div class="r"><span>Tarikh :</span><span></span></div></div>
+    </div>
+    <div class="note" style="margin-top:16px;">**Potong yang tidak berkenaan</div>
+  </div>`;
+  const title = `${e(i.serial)} — Permohonan Pelupusan Kenderaan`;
+  w.document.open();
+  w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${title}</title><style>${css}</style></head><body>${page1}${photoHtml}${docHtml}${last}<script>${PR_WRAP_JS}<\/script><script>var ps=document.querySelectorAll(".page");ps.forEach(function(p,k){var d=document.createElement("div");d.className="pgno";d.textContent="Muka "+(k+1)+" / "+ps.length;p.appendChild(d);var h=document.createElement("div");h.className="runhead";h.textContent=document.title;p.appendChild(h);});window.onload=function(){window.print();}<\/script></body></html>`);
+  w.document.close();
 }
 async function deletePurchaseRequest(stageKey, idx){
   if(currentRole!=="admin") return;
